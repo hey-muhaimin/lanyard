@@ -1,0 +1,91 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "mkdir-setup",
+			"type": "shell",
+			"command": "mkdir cmd\\controlplane cmd\\proxy internal\\config internal\\logging internal\\policy internal\\vault internal\\grant internal\\events migrations",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "setup-lanyard-project",
+			"type": "shell",
+			"command": "cmd /c \"mkdir cmd\\controlplane cmd\\proxy internal\\config internal\\logging internal\\policy internal\\vault internal\\grant internal\\events internal\\registry internal\\revocation migrations docs\\adr .github\\workflows && go version\"",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "setup-lanyard-project-2",
+			"type": "shell",
+			"command": "mkdir \"cmd\\controlplane\" \"cmd\\proxy\" \"internal\\config\" \"internal\\logging\" \"internal\\policy\" \"internal\\vault\" \"internal\\grant\" \"internal\\events\" \"internal\\registry\" \"internal\\revocation\" \"migrations\" \"docs\\adr\" \".github\\workflows\"; go version",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "check-go-toolchain",
+			"type": "shell",
+			"command": "cmd /c \"where go || echo no-go && where.exe go || echo no-go2 && dir\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "new-check-go",
+			"type": "shell",
+			"command": "if (Get-Command go -ErrorAction SilentlyContinue) { go version } else { Write-Host 'no-go' }; Get-ChildItem",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "install-go",
+			"type": "shell",
+			"command": "winget install --id GoLang.Go --accept-source-agreements --accept-package-agreements",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "check-go-after-install",
+			"type": "shell",
+			"command": "cmd /c \"where go && go version\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "list-go-bin",
+			"type": "shell",
+			"command": "Get-ChildItem 'C:\\Program Files\\Go\\bin'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "create-lanyard-layout",
+			"type": "shell",
+			"command": "$dirs = @('cmd/controlplane','cmd/proxy','internal/config','internal/logging','internal/policy','internal/vault','internal/grant','internal/events','internal/registry','internal/revocation','migrations','docs/adr','.github/workflows'); foreach ($d in $dirs) { New-Item -ItemType Directory -Path (Join-Path $PWD $d) -Force | Out-Null }; Write-Host 'dirs-ready'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "go-mod-init",
+			"type": "shell",
+			"command": "$env:Path += ';C:\\Program Files\\Go\\bin'; Set-Location 'V:\\lanyard'; go mod init github.com/example/lanyard",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "go-test",
+			"type": "shell",
+			"command": "Set-Location 'V:\\lanyard'; & 'C:\\Program Files\\Go\\bin\\go.exe' test ./...",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "go-build",
+			"type": "shell",
+			"command": "Set-Location 'V:\\lanyard'; & 'C:\\Program Files\\Go\\bin\\go.exe' build ./...",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
