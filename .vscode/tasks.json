@@ -86,6 +86,13 @@
 			"command": "Set-Location 'V:\\lanyard'; & 'C:\\Program Files\\Go\\bin\\go.exe' build ./...",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "git-production-change-status",
+			"type": "shell",
+			"command": "Set-Location 'V:\\lanyard'; git status --short; git branch --show-current; git remote -v; git diff --stat; git diff -- cmd\\proxy\\main.go cmd\\proxy\\main_test.go AGENTS.md",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }
