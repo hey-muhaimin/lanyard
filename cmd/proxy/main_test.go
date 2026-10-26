@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"io"
 	"net"
@@ -69,7 +70,7 @@ func TestProxyForwardsOnlyScopedRequestsAndScrubsCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := vault.NewStore(vault.NewMemoryKMS("test-key"))
-	if err := store.Put("test-key", tenantID, "demo-secret", []byte(secret)); err != nil {
+	if err := store.Put(context.Background(), "test-key", tenantID, "demo-secret", []byte(secret)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -127,7 +128,7 @@ func TestProxyDeniesMissingScopeWithoutCallingUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := vault.NewStore(vault.NewMemoryKMS("test-key"))
-	if err := store.Put("test-key", "tenant-1", "demo-secret", []byte("secret")); err != nil {
+	if err := store.Put(context.Background(), "test-key", "tenant-1", "demo-secret", []byte("secret")); err != nil {
 		t.Fatal(err)
 	}
 	called := false

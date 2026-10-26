@@ -74,7 +74,7 @@ func main() {
 	kms := vault.NewMemoryKMS(cfg.VaultKeyID)
 	secretStore := vault.NewStore(kms)
 
-	if err := secretStore.Put(cfg.VaultKeyID, cfg.TenantID, "demo-secret", []byte("super-secret-value")); err != nil {
+	if err := secretStore.Put(context.Background(), cfg.VaultKeyID, cfg.TenantID, "demo-secret", []byte("super-secret-value")); err != nil {
 		logger.Error("secret put failed", map[string]any{"error": err.Error()})
 		os.Exit(1)
 	}
