@@ -11,5 +11,6 @@ FROM gcr.io/distroless/base-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/controlplane /app/controlplane
 COPY --from=build /out/proxy /app/proxy
+COPY web /app/web
 EXPOSE 8080 8081
 CMD ["/app/controlplane"]

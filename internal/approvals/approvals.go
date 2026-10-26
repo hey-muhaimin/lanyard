@@ -65,6 +65,18 @@ func (s *Store) Create(request Request, now time.Time) (Request, error) {
 	return request, nil
 }
 
+func (s *Store) List(tenantID string) []Request {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	requests := make([]Request, 0)
+	for _, request := range s.requests {
+		if tenantID == "" || request.TenantID == tenantID {
+			requests = append(requests, request)
+		}
+	}
+	return requests
+}
+
 func (s *Store) Decide(id, tenantID, status string, parameters any, now time.Time) (Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

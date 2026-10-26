@@ -157,15 +157,24 @@ func (api *controlPlaneAPI) connectorsHandler(w http.ResponseWriter, r *http.Req
 }
 
 func (api *controlPlaneAPI) approveHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		tenant := tenantID(r)
+		writeJSON(w, http.StatusOK, api.approvals.List(tenant))
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var body struct {
-		ID         string         `json:"id"`
-		Status     string         `json:"status"`
-		Parameters map[string]any `json:"parameters"`
-		TenantID   string         `json:"tenant_id"`
+		ID          string         `json:"id"`
+		Status      string         `json:"status"`
+		Parameters  map[string]any `json:"parameters"`
+		TenantID    string         `json:"tenant_id"`
+		TaskID      string         `json:"task_id"`
+		ChainID     string         `json:"chain_id"`
+		RequesterID string         `json:"requester_id"`
+		Action      string         `json:"action"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -174,12 +183,24 @@ func (api *controlPlaneAPI) approveHandler(w http.ResponseWriter, r *http.Reques
 	if tenant == "" {
 		tenant = tenantID(r)
 	}
-	request, err := api.approvals.Decide(body.ID, tenant, body.Status, body.Parameters, time.Now())
-	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+	if body.Status == "approved" || body.Status == "denied" {
+		request, err := api.approvals.Decide(body.ID, tenant, body.Status, body.Parameters, time.Now())
+		if err != nil {
+			writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, request)
 		return
 	}
-	writeJSON(w, http.StatusOK, request)
+	request, err := api.approvals.Create(approvals.Request{
+		ID: body.ID, TenantID: tenant, TaskID: body.TaskID, ChainID: body.ChainID,
+		RequesterID: body.RequesterID, Action: body.Action, Parameters: body.Parameters,
+	}, time.Now())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, request)
 }
 
 func (api *controlPlaneAPI) revokeHandler(w http.ResponseWriter, r *http.Request) {

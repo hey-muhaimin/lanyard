@@ -75,5 +75,8 @@ func newControlPlaneHandler() http.Handler {
 	mux.Handle("/approve", api.handler())
 	mux.Handle("/revoke", api.handler())
 	mux.Handle("/events/", api.handler())
+	if webFileServer := http.FileServer(http.Dir("web")); webFileServer != nil {
+		mux.Handle("/", webFileServer)
+	}
 	return mux
 }

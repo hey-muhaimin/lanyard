@@ -1,1 +1,29 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Lanyard Operations</title><link rel="stylesheet" href="styles.css"></head><body><header><strong>Lanyard</strong><button id="refresh">Refresh</button></header><main><section><h1>Security operations</h1><div class="grid"><article><h2>Agents</h2><ul id="agents"><li>Loading...</li></ul></article><article><h2>Approvals</h2><button id="approval-request">New approval</button><pre id="approvals">No pending requests</pre></article><article><h2>Revocation</h2><form id="revoke"><label>Scope <select id="scope"><option value="agent_id">Agent</option><option value="task_id">Task</option><option value="chain_id">Chain</option></select></label><label>ID <input id="scope-id" required></label><button>Revoke</button></form></article><article><h2>Audit replay</h2><pre id="replay">No tenant selected</pre></article></div></section></main><script type="module" src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Lanyard Operations</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <strong class="brand">LANYARD</strong>
+    <label class="tenant-control">Tenant <input id="tenant" value="tenant-demo" autocomplete="off"></label>
+  </header>
+  <main>
+    <div class="heading"><div><p class="eyebrow">CONTROL PLANE</p><h1>Security operations</h1></div><button id="refresh" class="secondary">Refresh</button></div>
+    <section class="summary" aria-label="Status summary"><div><span id="agent-count">0</span><small>Agents</small></div><div><span id="approval-count">0</span><small>Pending approvals</small></div><div><span id="event-count">0</span><small>Audit events</small></div></section>
+    <div class="workspace-grid">
+      <section class="panel panel-wide"><div class="panel-heading"><h2>Agents</h2><button id="register-agent" class="secondary">Register agent</button></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Owner</th><th>Status</th></tr></thead><tbody id="agents"><tr><td colspan="3" class="empty">Loading agents...</td></tr></tbody></table></div></section>
+      <section class="panel"><div class="panel-heading"><h2>Approvals</h2></div><div id="approvals" class="stack"><p class="empty">Loading approvals...</p></div></section>
+      <section class="panel"><div class="panel-heading"><h2>Revocation</h2></div><form id="revoke" class="form"><label>Scope<select id="scope"><option value="agent_id">Agent</option><option value="task_id">Task</option><option value="chain_id">Chain</option><option value="token_id">Token</option></select></label><label>ID<input id="scope-id" required></label><button type="submit">Revoke access</button></form><p id="revoke-status" class="status" role="status"></p></section>
+      <section class="panel panel-wide"><div class="panel-heading"><h2>Audit replay</h2><button id="load-replay" class="secondary">Load timeline</button></div><div id="replay" class="timeline"><p class="empty">Select a tenant and load its timeline.</p></div></section>
+    </div>
+  </main>
+  <dialog id="agent-dialog"><form id="agent-form" method="dialog" class="form"><div class="dialog-heading"><h2>Register agent</h2><button class="icon" value="cancel" aria-label="Close">×</button></div><label>ID<input name="id" required></label><label>Owner subject<input name="owner_subject" required></label><label>Public key<input name="public_key" required></label><input name="tenant_id" type="hidden"><button value="default">Register agent</button></form></dialog>
+  <div id="notice" class="notice" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
