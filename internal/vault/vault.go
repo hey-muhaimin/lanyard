@@ -61,6 +61,15 @@ func EncryptionContext(tenantID, purpose string) map[string]string {
 	}
 }
 
+func secretEncryptionContext(tenantID, secretID string) map[string]string {
+	if secretID == "" {
+		panic("vault: secret encryption context requires a secret ID")
+	}
+	context := EncryptionContext(tenantID, purposeSecret)
+	context["secret_id"] = secretID
+	return context
+}
+
 // contextHash returns a deterministic digest of an encryption context so test
 // doubles (and any other in-process implementation) can detect context changes.
 func contextHash(encryptionContext map[string]string) string {
@@ -209,7 +218,7 @@ func (s *Store) Put(ctx context.Context, keyID, tenantID, id string, plaintext [
 		return ErrInvalidTenant
 	}
 
-	ciphertext, wrappedKey, err := Seal(ctx, s.kms, keyID, tenantID, plaintext)
+	ciphertext, wrappedKey, err := sealSecret(ctx, s.kms, keyID, tenantID, id, plaintext)
 	if err != nil {
 		return err
 	}
@@ -245,7 +254,7 @@ func (s *Store) Get(ctx context.Context, id, tenantID string) ([]byte, error) {
 		return nil, fmt.Errorf("vault: secret %q has unsupported version %d: %w", id, item.Version, ErrUnsupportedVersion)
 	}
 
-	return Open(ctx, s.kms, item.KMSKeyID, item.TenantID, item.Ciphertext, item.WrappedKey)
+	return openSecret(ctx, s.kms, item.KMSKeyID, item.TenantID, id, item.Ciphertext, item.WrappedKey)
 }
 
 // UseOnce is superseded by the non-destructive Get.
@@ -259,6 +268,10 @@ func (s *Store) UseOnce(ctx context.Context, id, tenantID string) ([]byte, error
 // Seal encrypts plaintext under a KMS-generated DEK and binds the ciphertext to
 // the tenant as GCM AAD (independent of the KMS encryption context).
 func Seal(ctx context.Context, kms KMS, keyID, tenantID string, plaintext []byte) (ciphertext []byte, wrappedDEK []byte, err error) {
+	return sealSecret(ctx, kms, keyID, tenantID, "", plaintext)
+}
+
+func sealSecret(ctx context.Context, kms KMS, keyID, tenantID, secretID string, plaintext []byte) (ciphertext []byte, wrappedDEK []byte, err error) {
 	if tenantID == "" {
 		return nil, nil, ErrInvalidTenant
 	}
@@ -266,32 +279,38 @@ func Seal(ctx context.Context, kms KMS, keyID, tenantID string, plaintext []byte
 		return nil, nil, fmt.Errorf("vault: seal requires a kms: %w", ErrKMSUnavailable)
 	}
 
-	dek, wrappedDEK, err := kms.GenerateDataKey(ctx, keyID, EncryptionContext(tenantID, purposeSecret))
+	encryptionContext := EncryptionContext(tenantID, purposeSecret)
+	if secretID != "" {
+		encryptionContext = secretEncryptionContext(tenantID, secretID)
+	}
+	dek, wrappedDEK, err := kms.GenerateDataKey(ctx, keyID, encryptionContext)
 	if err != nil {
 		return nil, nil, err
 	}
-	success := false
-	defer func() {
-		if !success {
-			clear(dek)
-		}
-	}()
+	defer clear(dek)
 
 	if len(dek) != dekSize {
 		return nil, nil, errors.New("vault: kms returned a data key with unexpected length")
 	}
 
-	ciphertext, err = sealWithKey(dek, plaintext, []byte(tenantID))
+	aad := []byte(tenantID)
+	if secretID != "" {
+		aad = []byte(tenantID + "\x00" + secretID)
+	}
+	ciphertext, err = sealWithKey(dek, plaintext, aad)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vault: seal secret: %w", err)
 	}
-	success = true
 	return ciphertext, wrappedDEK, nil
 }
 
 // Open decrypts a record by unwrapping its DEK with the same encryption context
 // used by Seal, then verifying the tenant-bound GCM ciphertext.
 func Open(ctx context.Context, kms KMS, keyID, tenantID string, ciphertext, wrappedDEK []byte) (plaintext []byte, err error) {
+	return openSecret(ctx, kms, keyID, tenantID, "", ciphertext, wrappedDEK)
+}
+
+func openSecret(ctx context.Context, kms KMS, keyID, tenantID, secretID string, ciphertext, wrappedDEK []byte) (plaintext []byte, err error) {
 	if tenantID == "" {
 		return nil, ErrInvalidTenant
 	}
@@ -299,26 +318,28 @@ func Open(ctx context.Context, kms KMS, keyID, tenantID string, ciphertext, wrap
 		return nil, fmt.Errorf("vault: open requires a kms: %w", ErrKMSUnavailable)
 	}
 
-	dek, err := kms.Decrypt(ctx, keyID, wrappedDEK, EncryptionContext(tenantID, purposeSecret))
+	encryptionContext := EncryptionContext(tenantID, purposeSecret)
+	if secretID != "" {
+		encryptionContext = secretEncryptionContext(tenantID, secretID)
+	}
+	dek, err := kms.Decrypt(ctx, keyID, wrappedDEK, encryptionContext)
 	if err != nil {
 		return nil, err
 	}
-	success := false
-	defer func() {
-		if !success {
-			clear(dek)
-		}
-	}()
+	defer clear(dek)
 
 	if len(dek) != dekSize {
 		return nil, errors.New("vault: kms returned a data key with unexpected length")
 	}
 
-	plaintext, err = openWithKey(dek, ciphertext, []byte(tenantID))
+	aad := []byte(tenantID)
+	if secretID != "" {
+		aad = []byte(tenantID + "\x00" + secretID)
+	}
+	plaintext, err = openWithKey(dek, ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("vault: open secret: %w", err)
 	}
-	success = true
 	return plaintext, nil
 }
 

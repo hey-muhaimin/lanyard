@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -87,7 +88,9 @@ func (a *Adapter) GenerateDataKey(ctx context.Context, keyID string, encryptionC
 			return nil, nil, mapped
 		}
 		if attempt < a.retries {
-			sleepWithJitter(backoffDuration(attempt))
+			if err := sleepWithJitter(ctx, backoffDuration(attempt)); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 	return nil, nil, lastErr
@@ -126,7 +129,9 @@ func (a *Adapter) Decrypt(ctx context.Context, keyID string, wrappedDEK []byte, 
 			return nil, mapped
 		}
 		if attempt < a.retries {
-			sleepWithJitter(backoffDuration(attempt))
+			if err := sleepWithJitter(ctx, backoffDuration(attempt)); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return nil, lastErr
@@ -138,13 +143,20 @@ func backoffDuration(attempt int) time.Duration {
 	return d
 }
 
-func sleepWithJitter(d time.Duration) {
+func sleepWithJitter(ctx context.Context, d time.Duration) error {
 	jitter := 0.8 + rand.Float64()*0.4
 	d = time.Duration(float64(d) * jitter)
 	if d < 0 {
 		d = 0
 	}
-	time.Sleep(d)
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func mapError(err error) error {
@@ -159,7 +171,7 @@ func mapError(err error) error {
 		return fmt.Errorf("%w: %s", vault.ErrKMSTenantMismatch, ike.Error())
 	}
 	// decryption-context failure -> ErrKMSTenantMismatch
-	if contains(errStr, "IncorrectKey") || contains(errStr, "encryption context") || contains(errStr, "EncryptionContext") {
+	if strings.Contains(errStr, "IncorrectKey") || strings.Contains(errStr, "encryption context") || strings.Contains(errStr, "EncryptionContext") {
 		return fmt.Errorf("%w: %s", vault.ErrKMSTenantMismatch, errStr)
 	}
 
@@ -169,11 +181,10 @@ func mapError(err error) error {
 	}
 	var ice *types.InvalidCiphertextException
 	if errors.As(err, &ice) {
-		// Check if it's actually a context issue - we already checked above
-		if contains(ice.Error(), "context") || contains(ice.Error(), "IncorrectKey") {
+		if strings.Contains(strings.ToLower(ice.Error()), "context") {
 			return fmt.Errorf("%w: %s", vault.ErrKMSTenantMismatch, ice.Error())
 		}
-		return fmt.Errorf("%w: %s", vault.ErrKMSNotFound, ice.Error())
+		return fmt.Errorf("%w: %s", vault.ErrKMSTenantMismatch, ice.Error())
 	}
 	// AccessDeniedException, ThrottlingException and a few others are generic
 	// smithy errors in this SDK version (not modelled in service/kms/types), so
@@ -197,27 +208,11 @@ func mapError(err error) error {
 		return fmt.Errorf("%w: %s", vault.ErrKMSUnavailable, dte.Error())
 	}
 
-	if contains(errStr, "timeout") || contains(errStr, "Timeout") ||
-		contains(errStr, "Throttl") || contains(errStr, "RequestLimitExceeded") ||
-		contains(errStr, "connection") || contains(errStr, "network") ||
-		contains(errStr, "KMSInternalException") {
+	lower := strings.ToLower(errStr)
+	if strings.Contains(lower, "timeout") || strings.Contains(lower, "throttl") ||
+		strings.Contains(lower, "requestlimitexceeded") || strings.Contains(lower, "kmsinternalexception") {
 		return fmt.Errorf("%w: %s", vault.ErrKMSUnavailable, errStr)
 	}
 
-	return fmt.Errorf("%w: %s", vault.ErrKMSUnavailable, err.Error())
-}
-
-func contains(s, substr string) bool {
-	if len(substr) == 0 {
-		return true
-	}
-	if len(s) < len(substr) {
-		return false
-	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return fmt.Errorf("kms request failed: %w: %s", vault.ErrKMSDenied, errStr)
 }

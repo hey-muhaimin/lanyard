@@ -151,6 +151,30 @@ func TestTamperedWrappedDEKFails(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsCiphertextAndWrappedKeySwap(t *testing.T) {
+	ctx := context.Background()
+	kms := NewMemoryKMS("local-dev-key")
+	store := NewStore(kms)
+
+	if err := store.Put(ctx, "local-dev-key", "tenant-a", "secret-a", []byte("alpha")); err != nil {
+		t.Fatalf("Put(secret-a) error = %v", err)
+	}
+	if err := store.Put(ctx, "local-dev-key", "tenant-a", "secret-b", []byte("bravo")); err != nil {
+		t.Fatalf("Put(secret-b) error = %v", err)
+	}
+
+	a := store.items["secret-a"]
+	b := store.items["secret-b"]
+	a.Ciphertext, b.Ciphertext = b.Ciphertext, a.Ciphertext
+	a.WrappedKey, b.WrappedKey = b.WrappedKey, a.WrappedKey
+	store.items["secret-a"] = a
+	store.items["secret-b"] = b
+
+	if _, err := store.Get(ctx, "secret-a", "tenant-a"); err == nil {
+		t.Fatal("Get(secret-a) succeeded after records were swapped")
+	}
+}
+
 func TestDecryptRejectsChangedEncryptionContext(t *testing.T) {
 	ctx := context.Background()
 	kms := NewMemoryKMS("local-dev-key")

@@ -19,6 +19,7 @@ import (
 
 	token "github.com/example/lanyard/internal"
 	"github.com/example/lanyard/internal/config"
+	kmsimpl "github.com/example/lanyard/internal/kms"
 	"github.com/example/lanyard/internal/logging"
 	"github.com/example/lanyard/internal/vault"
 )
@@ -67,16 +68,29 @@ func main() {
 	}
 	upstreamClient := newUpstreamClient()
 
-	if os.Getenv("ALLOW_INSECURE_DEMO") != "true" {
-		logger.Error("proxy requires a production KMS and secret store; set ALLOW_INSECURE_DEMO=true only for local demos", nil)
+	if err := cfg.ValidateProduction(); err != nil {
+		logger.Error("invalid proxy KMS configuration", map[string]any{"error": err.Error()})
 		os.Exit(1)
 	}
-	kms := vault.NewMemoryKMS(cfg.VaultKeyID)
+
+	var kms vault.KMS
+	if cfg.DevMode {
+		kms = vault.NewMemoryKMS(cfg.VaultKeyID)
+	} else {
+		var err error
+		kms, err = kmsimpl.NewFromEnv(context.Background(), cfg.KMSKeyID, cfg.AWSRegion)
+		if err != nil {
+			logger.Error("failed to initialize production KMS", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+	}
 	secretStore := vault.NewStore(kms)
 
-	if err := secretStore.Put(context.Background(), cfg.VaultKeyID, cfg.TenantID, "demo-secret", []byte("super-secret-value")); err != nil {
-		logger.Error("secret put failed", map[string]any{"error": err.Error()})
-		os.Exit(1)
+	if cfg.DevMode {
+		if err := secretStore.Put(context.Background(), cfg.VaultKeyID, cfg.TenantID, "demo-secret", []byte("super-secret-value")); err != nil {
+			logger.Error("secret put failed", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
 	}
 
 	mux := http.NewServeMux()

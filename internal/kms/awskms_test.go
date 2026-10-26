@@ -126,8 +126,8 @@ func TestErrorMappingInvalidCiphertext(t *testing.T) {
 	}
 	a := NewWithClient(fc, "key1")
 	_, err := a.Decrypt(context.Background(), "", []byte("w"), map[string]string{"t": "1"})
-	if !errors.Is(err, vault.ErrKMSNotFound) {
-		t.Fatalf("expected ErrKMSNotFound, got %v", err)
+	if !errors.Is(err, vault.ErrKMSTenantMismatch) {
+		t.Fatalf("expected ErrKMSTenantMismatch, got %v", err)
 	}
 }
 
