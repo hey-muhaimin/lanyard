@@ -29,6 +29,8 @@ services:
       PORT: "8080"
       LOG_LEVEL: info
       TENANT_ID: tenant-demo
+    ports:
+      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,6 +45,9 @@ services:
       LOG_LEVEL: info
       TENANT_ID: tenant-demo
       ALLOW_INSECURE_DEMO: "true"
+      UPSTREAM_URL: "https://example.com"
+    ports:
+      - "8081:8081"
     depends_on:
       nats:
         condition: service_started

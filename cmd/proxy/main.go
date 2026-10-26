@@ -214,7 +214,7 @@ func newProxyHandler(upstreamURL *url.URL, client *http.Client, secretStore *vau
 			return
 		}
 		claims, ok := token.ClaimsFromRequest(r)
-		if !ok || !token.HasScope(claims, "demo", "read", "demo-secret") {
+		if !ok || claims.TenantID != tenantID || !token.HasScope(claims, "demo", "read", "demo-secret") {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}

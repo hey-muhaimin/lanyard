@@ -57,6 +57,10 @@ func (s *Service) Issue(ctx context.Context, req Request) (Claims, error) {
 		}
 	}
 
+	approvalStatus := req.ApprovalStatus
+	if approvalStatus == "" {
+		approvalStatus = "approved"
+	}
 	for _, scope := range req.Resources {
 		decision, err := s.policyEngine.Decide(ctx, policy.Request{
 			Actor:          req.Actor,
@@ -65,7 +69,7 @@ func (s *Service) Issue(ctx context.Context, req Request) (Claims, error) {
 			Action:         scope.Action,
 			Resource:       scope.Resource,
 			MaxRows:        scope.MaxRows,
-			ApprovalStatus: "approved",
+			ApprovalStatus: approvalStatus,
 		})
 		if err != nil {
 			return Claims{}, fmt.Errorf("evaluate policy for %s:%s: %w", scope.Connector, scope.Resource, err)

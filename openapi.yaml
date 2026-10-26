@@ -1,0 +1,62 @@
+openapi: 3.1.0
+info:
+  title: Lanyard API
+  version: 1.0.0
+paths:
+  /healthz:
+    get: { responses: { '200': { description: Healthy } } }
+  /readyz:
+    get: { responses: { '200': { description: Ready } } }
+  /grant:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantRequest' }
+      responses:
+        '202': { description: Grant accepted or approval pending }
+  /revoke:
+    post:
+      responses: { '202': { description: Revocation published } }
+  /approve:
+    post:
+      responses: { '200': { description: Approval decided } }
+  /admin/tenants:
+    get:
+      responses: { '200': { description: Tenant list } }
+    post:
+      responses: { '201': { description: Tenant created } }
+  /admin/agents:
+    get:
+      responses: { '200': { description: Agent list } }
+    post:
+      responses: { '201': { description: Agent registered } }
+  /admin/connectors:
+    post:
+      responses: { '201': { description: Connector created } }
+  /events/replay:
+    get:
+      responses: { '200': { description: Tenant audit timeline } }
+components:
+  schemas:
+    GrantRequest:
+      type: object
+      required: [subject, actor, task_id, resources, ttl_seconds]
+      properties:
+        subject: { type: string }
+        actor: { type: string }
+        task_id: { type: string }
+        purpose: { type: string }
+        ttl_seconds: { type: integer, minimum: 1 }
+        approval_status: { type: string, enum: [approved, pending] }
+        resources:
+          type: array
+          items:
+            type: object
+            required: [connector, action, resource]
+            properties:
+              connector: { type: string }
+              action: { type: string }
+              resource: { type: string }
+              max_rows: { type: integer, minimum: 0 }

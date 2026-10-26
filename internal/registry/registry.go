@@ -1,6 +1,9 @@
 package registry
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 // Tenant is the top-level identity boundary for Lanyard.
 type Tenant struct {
@@ -29,6 +32,7 @@ type Connector struct {
 
 // Registry stores the control-plane objects needed by the grant service.
 type Registry struct {
+	mu         sync.RWMutex
 	tenants    map[string]Tenant
 	agents     map[string]Agent
 	connectors map[string]Connector
@@ -43,6 +47,8 @@ func New() *Registry {
 }
 
 func (r *Registry) CreateTenant(id, name string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if id == "" || name == "" {
 		return fmt.Errorf("tenant id and name are required")
 	}
@@ -51,6 +57,8 @@ func (r *Registry) CreateTenant(id, name string) error {
 }
 
 func (r *Registry) RegisterAgent(agent Agent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if agent.ID == "" || agent.TenantID == "" {
 		return fmt.Errorf("agent id and tenant id are required")
 	}
@@ -65,11 +73,15 @@ func (r *Registry) RegisterAgent(agent Agent) error {
 }
 
 func (r *Registry) GetAgent(id string) (Agent, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	agent, ok := r.agents[id]
 	return agent, ok
 }
 
 func (r *Registry) ValidateAgent(id string) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	agent, ok := r.agents[id]
 	if !ok {
 		return fmt.Errorf("unknown agent %s", id)
@@ -81,6 +93,8 @@ func (r *Registry) ValidateAgent(id string) error {
 }
 
 func (r *Registry) RegisterConnector(connector Connector) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if connector.ID == "" || connector.TenantID == "" {
 		return fmt.Errorf("connector id and tenant id are required")
 	}
@@ -92,6 +106,8 @@ func (r *Registry) RegisterConnector(connector Connector) error {
 }
 
 func (r *Registry) TenantForAgent(agentID string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	agent, ok := r.agents[agentID]
 	if !ok {
 		return "", fmt.Errorf("unknown agent %s", agentID)

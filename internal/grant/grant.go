@@ -25,13 +25,14 @@ type Claims struct {
 
 // Request captures the data required to create a task-scoped grant.
 type Request struct {
-	Subject     string
-	Actor       string
-	TaskID      string
-	Purpose     string
-	Resources   []ScopeEntry
-	TTLSeconds  int
-	ParentGrant string
+	Subject        string
+	Actor          string
+	TaskID         string
+	Purpose        string
+	Resources      []ScopeEntry
+	TTLSeconds     int
+	ParentGrant    string
+	ApprovalStatus string
 }
 
 func (r Request) Validate() error {
