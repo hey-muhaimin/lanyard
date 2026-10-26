@@ -76,7 +76,7 @@
 		{
 			"label": "go-test",
 			"type": "shell",
-			"command": "Set-Location 'V:\\lanyard'; & 'C:\\Program Files\\Go\\bin\\go.exe' test ./...",
+			"command": "Set-Location 'V:\\lanyard'; & 'C:\\Program Files\\Go\\bin\\gofmt.exe' -w 'internal\\grant\\grant.go' 'internal\\grant\\service.go' 'internal\\grant\\service_test.go'; & 'C:\\Program Files\\Go\\bin\\go.exe' test ./...",
 			"isBackground": false,
 			"problemMatcher": []
 		},
@@ -88,9 +88,220 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "git-production-change-status",
+			"label": "research-aws-agent-toolkit-setup",
 			"type": "shell",
-			"command": "Set-Location 'V:\\lanyard'; git status --short; git branch --show-current; git remote -v; git diff --stat; git diff -- cmd\\proxy\\main.go cmd\\proxy\\main_test.go AGENTS.md",
+			"command": "firecrawl --status; if ($?) { firecrawl scrape 'https://raw.githubusercontent.com/aws/agent-toolkit-for-aws/refs/heads/main/setup-instructions/setup.md' -o \"$env:TEMP\\lanyard-aws-agent-toolkit-setup.md\" }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "check-aws-toolkit-prerequisites",
+			"type": "shell",
+			"command": "Write-Output \"OS=$env:OS\"; Write-Output '--- tools ---'; foreach ($name in @('aws','uv','curl')) { $command = Get-Command $name -ErrorAction SilentlyContinue; if ($command) { Write-Output \"$name=$($command.Source)\" } else { Write-Output \"$name=missing\" } }; Write-Output '--- AWS CLI endpoint ---'; try { $response = Invoke-WebRequest -Uri 'https://awscli.amazonaws.com' -Method Head -TimeoutSec 15; Write-Output \"HTTP=$([int]$response.StatusCode)\" } catch { Write-Output \"ERROR=$($_.Exception.Message)\" }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "probe-awscli-connectivity",
+			"type": "shell",
+			"command": "$curlCommand = Get-Command curl.exe -ErrorAction SilentlyContinue; if ($curlCommand) { Write-Output \"curl.exe=$($curlCommand.Source)\"; & $curlCommand.Source -I --max-time 15 'https://awscli.amazonaws.com' } else { Write-Output 'curl.exe=missing' }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-awscli-download-access",
+			"type": "shell",
+			"command": "try { $response = Invoke-WebRequest -UseBasicParsing -Uri 'https://awscli.amazonaws.com' -Method Head -TimeoutSec 15; Write-Output \"HTTP=$([int]$response.StatusCode)\" } catch { Write-Output \"ERROR=$($_.Exception.Message)\"; exit 1 }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "download-awscli-installer",
+			"type": "shell",
+			"command": "$installer = Join-Path $env:TEMP 'AWSCLIV2.msi'; Invoke-WebRequest -UseBasicParsing -Uri 'https://awscli.amazonaws.com/AWSCLIV2.msi' -OutFile $installer; if ($?) { $item = Get-Item $installer; Write-Output \"Downloaded official AWS CLI MSI to $($item.FullName) ($($item.Length) bytes)\" }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "download-official-awscli-msi",
+			"type": "shell",
+			"command": "$installer = Join-Path $env:TEMP 'AWSCLIV2.msi'; Invoke-WebRequest -UseBasicParsing -Uri 'https://awscli.amazonaws.com/AWSCLIV2.msi' -OutFile $installer; if ($?) { $item = Get-Item $installer; Write-Output ('Downloaded official AWS CLI MSI to {0} ({1} bytes)' -f $item.FullName, $item.Length); Get-FileHash $installer -Algorithm SHA256 }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "install-awscli-v2",
+			"type": "shell",
+			"command": "$installer = Join-Path $env:TEMP 'AWSCLIV2.msi'; $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $installer, '/qn', '/norestart') -Wait -PassThru; Write-Output \"InstallerExitCode=$($process.ExitCode)\"; if ($process.ExitCode -ne 0) { exit $process.ExitCode }; $aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; if (-not (Test-Path $aws)) { $aws = 'C:\\Program Files\\Amazon\\AWSCLI\\bin\\aws.exe' }; if (Test-Path $aws) { & $aws --version } else { Write-Output 'AWS CLI executable not found after installation'; exit 1 }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "diagnose-awscli-install-failure",
+			"type": "shell",
+			"command": "$installer = Join-Path $env:TEMP 'AWSCLIV2.msi'; $log = Join-Path $env:TEMP 'AWSCLIV2-install.log'; $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $installer, '/qn', '/norestart', '/l*v', $log) -Wait -PassThru; Write-Output \"InstallerExitCode=$($process.ExitCode)\"; if (Test-Path $log) { Select-String -Path $log -Pattern 'Return value 3|error|denied|privilege|another installation|already installed|Product:' -Context 1,2 | Select-Object -Last 25 }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "read-awscli-install-troubleshooting",
+			"type": "shell",
+			"command": "firecrawl scrape 'https://raw.githubusercontent.com/aws/agent-toolkit-for-aws/refs/heads/main/setup-instructions/setup-troubleshooting.md' -o \"$env:TEMP\\lanyard-aws-agent-toolkit-troubleshooting.md\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-awscli-msi-signature",
+			"type": "shell",
+			"command": "$installer = Join-Path $env:TEMP 'AWSCLIV2.msi'; $signature = Get-AuthenticodeSignature $installer; Write-Output \"Status=$($signature.Status)\"; Write-Output \"Signer=$($signature.SignerCertificate.Subject)\"; if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Amazon') { throw 'AWS CLI MSI signature verification failed' }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "run-signed-awscli-installer",
+			"type": "shell",
+			"command": "$installer = Join-Path $env:TEMP 'AWSCLIV2.msi'; $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $installer) -Wait -PassThru; Write-Output \"InstallerExitCode=$($process.ExitCode)\"; if ($process.ExitCode -ne 0) { exit $process.ExitCode }; $aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; if (Test-Path $aws) { & $aws --version } else { Write-Output 'Restart the shell or locate aws.exe after successful installation' }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "aws-login-laneyard-profile",
+			"type": "shell",
+			"command": "$aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; & $aws configure set region ap-southeast-2 --profile laneyard; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & $aws login --region ap-southeast-2 --profile laneyard",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-laneyard-aws-access",
+			"type": "shell",
+			"command": "$aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; & $aws sts get-caller-identity --profile laneyard --query '{Authenticated:Account}' --output json; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-aws-identity-laneyard",
+			"type": "shell",
+			"command": "$env:AWS_PAGER = ''; $aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; & $aws sts get-caller-identity --profile laneyard --query '{Authenticated:Account}' --output json; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-sts-laneyard",
+			"type": "shell",
+			"command": "$aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; & $aws --no-cli-pager sts get-caller-identity --profile laneyard --query '{Authenticated:Account}' --output json; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "configure-agent-toolkit-laneyard",
+			"type": "shell",
+			"command": "$aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; & $aws --no-cli-pager configure agent-toolkit --yes --region us-east-1 --profile laneyard; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-agent-toolkit-laneyard",
+			"type": "shell",
+			"command": "$aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; & $aws --no-cli-pager agent-toolkit list-available-skills --region us-east-1 --profile laneyard; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "inspect-aws-mcp-configs",
+			"type": "shell",
+			"command": "$paths = @('C:\\Users\\muhai\\.claude.json','C:\\Users\\muhai\\.config\\devin\\mcp_config.json','C:\\Users\\muhai\\.gemini\\settings.json','C:\\Users\\muhai\\.kiro\\settings\\mcp.json','C:\\Users\\muhai\\.config\\opencode\\opencode.json','C:\\Users\\muhai\\.codeium\\mcp_config.json'); foreach ($path in $paths) { if (Test-Path -LiteralPath $path) { try { $root = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json; $servers = $root.mcpServers; if ($null -eq $servers) { $servers = $root.servers }; if ($null -eq $servers) { Write-Output (\"FILE {0}: no mcpServers/servers section\" -f $path); continue }; foreach ($property in $servers.PSObject.Properties) { if ($property.Name -match 'aws') { $envObject = $property.Value.env; $envNames = @(); $profileValue = ''; if ($null -ne $envObject) { $envNames = @($envObject.PSObject.Properties.Name); if ($null -ne $envObject.AWS_MCP_PROXY_PROFILES) { $profileValue = [string]$envObject.AWS_MCP_PROXY_PROFILES } }; Write-Output (\"FILE {0} SERVER {1} ENV_KEYS={2} PROFILE={3}\" -f $path,$property.Name,($envNames -join ','),$profileValue) } } } catch { Write-Output (\"FILE {0}: JSON parse failed ({1})\" -f $path,$_.Exception.Message) } } else { Write-Output (\"FILE {0}: missing\" -f $path) } }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "inspect-aws-mcp-configs-retry",
+			"type": "shell",
+			"command": "$paths = @('C:\\Users\\muhai\\.claude.json','C:\\Users\\muhai\\.config\\devin\\mcp_config.json','C:\\Users\\muhai\\.gemini\\settings.json','C:\\Users\\muhai\\.kiro\\settings\\mcp.json','C:\\Users\\muhai\\.config\\opencode\\opencode.json','C:\\Users\\muhai\\.codeium\\mcp_config.json'); $results = @(); foreach ($path in $paths) { if (Test-Path -LiteralPath $path) { try { $root = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json; $servers = $root.mcpServers; if ($null -eq $servers) { $servers = $root.servers }; if ($null -ne $servers) { foreach ($property in $servers.PSObject.Properties) { if ($property.Name -match 'aws') { $envObject = $property.Value.env; $envNames = @(); $profileValue = ''; if ($null -ne $envObject) { $envNames = @($envObject.PSObject.Properties.Name); if ($null -ne $envObject.AWS_MCP_PROXY_PROFILES) { $profileValue = [string]$envObject.AWS_MCP_PROXY_PROFILES } }; $results += [pscustomobject]@{Path=$path;Server=$property.Name;EnvKeys=($envNames -join ',');Profile=$profileValue} } } } else { $results += [pscustomobject]@{Path=$path;Server='(no server object)';EnvKeys='';Profile=''} } } catch { $results += [pscustomobject]@{Path=$path;Server='(parse error)';EnvKeys='';Profile=''} } } else { $results += [pscustomobject]@{Path=$path;Server='(missing)';EnvKeys='';Profile=''} } }; $results | ConvertTo-Json -Depth 4",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "inspect-opencode-config-shape",
+			"type": "shell",
+			"command": "$path = 'C:\\Users\\muhai\\.config\\opencode\\opencode.json'; $root = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json; $root.PSObject.Properties | ForEach-Object { $children = ''; if ($null -ne $_.Value -and $null -ne $_.Value.PSObject) { $children = $_.Value.PSObject.Properties.Name -join ',' }; [pscustomobject]@{TopLevel=$_.Name;ChildKeys=$children} } | ConvertTo-Json -Depth 3",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run Go tests",
+			"type": "shell",
+			"command": "go",
+			"args": [
+				"test",
+				"./..."
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "inspect-deploy-readiness-state",
+			"type": "shell",
+			"command": "git --no-pager status --short; git --no-pager diff --stat; git --no-pager log -1 --oneline",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "build-lanyard-container",
+			"type": "shell",
+			"command": "docker build --tag lanyard:ci .",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "check-firecrawl-and-scrape-aws-setup",
+			"type": "shell",
+			"command": "firecrawl --status; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; firecrawl scrape 'https://raw.githubusercontent.com/aws/agent-toolkit-for-aws/refs/heads/main/setup-instructions/setup.md' -o \"$env:TEMP\\lanyard-aws-agent-toolkit-setup-retry.md\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'SETUP_GUIDE_SAVED'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-aws-profile-and-toolkit-catalog",
+			"type": "shell",
+			"command": "$aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; & $aws --no-cli-pager sts get-caller-identity --profile laneyard --query '{Authenticated:Account}' --output json; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $skills = & $aws --no-cli-pager agent-toolkit list-available-skills --region us-east-1 --profile laneyard | ConvertFrom-Json; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $names = @($skills.skills | ForEach-Object { $_.name }); if ($names.Count -eq 0 -and $skills.data) { $names = @($skills.data | ForEach-Object { $_.name }) }; Write-Output ('AVAILABLE_SKILLS=' + $names.Count); Write-Output ($names -join ', ')",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-aws-mcp-profile-config",
+			"type": "shell",
+			"command": "$paths = @('C:\\Users\\muhai\\.claude.json','C:\\Users\\muhai\\.config\\devin\\mcp_config.json','C:\\Users\\muhai\\.gemini\\settings.json','C:\\Users\\muhai\\.kiro\\settings\\mcp.json','C:\\Users\\muhai\\.config\\opencode\\opencode.json','C:\\Users\\muhai\\.codeium\\mcp_config.json'); foreach ($path in $paths) { $root = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json; $servers = $root.mcpServers; if ($null -eq $servers) { $servers = $root.mcp }; $aws = $servers.'aws-mcp'; $value = $null; if ($null -ne $aws.env) { $value = $aws.env.AWS_MCP_PROXY_PROFILES } elseif ($null -ne $aws.environment) { $value = $aws.environment.AWS_MCP_PROXY_PROFILES }; if ($value -ne 'laneyard') { throw \"Unexpected profile setting in $path\" }; Write-Output (\"OK {0}\" -f $path) }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "fetch-aws-starter-rules",
+			"type": "shell",
+			"command": "firecrawl scrape 'https://raw.githubusercontent.com/aws/agent-toolkit-for-aws/refs/heads/main/rules/aws-starter-rules.md' -o \"$env:TEMP\\lanyard-aws-starter-rules.md\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'RULES_SAVED'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-toolkit-skills-ap-southeast-2-profile",
+			"type": "shell",
+			"command": "$env:PYTHONUTF8 = '1'; $env:PYTHONIOENCODING = 'utf-8'; $aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; & $aws --no-cli-pager agent-toolkit list-available-skills --region us-east-1 --profile laneyard --query skills[].name --output text; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "verify-toolkit-final-config",
+			"type": "shell",
+			"command": "$aws = 'C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe'; Write-Output ('PROJECT_REGION=' + (& $aws configure get region --profile laneyard)); $paths = @('C:\\Users\\muhai\\.claude.json','C:\\Users\\muhai\\.config\\devin\\mcp_config.json','C:\\Users\\muhai\\.gemini\\settings.json','C:\\Users\\muhai\\.kiro\\settings\\mcp.json','C:\\Users\\muhai\\.config\\opencode\\opencode.json','C:\\Users\\muhai\\.codeium\\mcp_config.json'); foreach ($path in $paths) { $root = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json; $servers = $root.mcpServers; if ($null -eq $servers) { $servers = $root.mcp }; $awsServer = $servers.'aws-mcp'; $value = $null; if ($null -ne $awsServer.env) { $value = $awsServer.env.AWS_MCP_PROXY_PROFILES } elseif ($null -ne $awsServer.environment) { $value = $awsServer.environment.AWS_MCP_PROXY_PROFILES }; Write-Output ($path + ' AWS_MCP_PROXY_PROFILES=' + $value); if ($value -ne 'laneyard') { exit 2 } }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "aws-auth-precheck-session",
+			"type": "shell",
+			"command": "cmd.exe",
+			"args": [
+				"/c",
+				"aws --version && aws sts get-caller-identity"
+			],
 			"isBackground": false,
 			"problemMatcher": []
 		}

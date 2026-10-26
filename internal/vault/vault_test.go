@@ -23,6 +23,21 @@ func TestSealAndOpenRoundTrip(t *testing.T) {
     }
 }
 
+func TestUseOnceConsumesTheSecret(t *testing.T) {
+    kms := NewMemoryKMS("local-dev-key")
+    store := NewStore(kms)
+    if err := store.Put("local-dev-key", "tenant-a", "secret-1", []byte("top-secret")); err != nil {
+        t.Fatalf("Put() error = %v", err)
+    }
+
+    if got, err := store.UseOnce(context.Background(), "secret-1", "tenant-a"); err != nil || string(got) != "top-secret" {
+        t.Fatalf("UseOnce() = %q, %v, want %q, nil", got, err, "top-secret")
+    }
+    if _, err := store.UseOnce(context.Background(), "secret-1", "tenant-a"); err == nil {
+        t.Fatal("UseOnce() allowed a second fetch of the same secret")
+    }
+}
+
 func TestSealRejectsWrongTenant(t *testing.T) {
     kms := NewMemoryKMS("local-dev-key")
     ciphertext, _, err := Seal(context.Background(), kms, "local-dev-key", "tenant-a", []byte("secret"))

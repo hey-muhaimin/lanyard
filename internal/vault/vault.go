@@ -83,15 +83,18 @@ func (s *Store) Put(keyID, tenantID, id string, plaintext []byte) error {
 }
 
 func (s *Store) UseOnce(ctx context.Context, id, tenantID string) ([]byte, error) {
-    s.mu.RLock()
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
     item, ok := s.items[id]
-    s.mu.RUnlock()
     if !ok {
         return nil, fmt.Errorf("secret %s not found", id)
     }
     if item.TenantID != tenantID {
         return nil, errors.New("tenant mismatch")
     }
+
+    delete(s.items, id)
 
     dek, err := s.kms.Unwrap(ctx, item.KMSKeyID, item.WrappedKey)
     if err != nil {

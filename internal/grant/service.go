@@ -57,33 +57,28 @@ func (s *Service) Issue(ctx context.Context, req Request) (Claims, error) {
 		}
 	}
 
-	action := "read"
-	resource := "default"
-	if len(req.Resources) > 0 {
-		action = req.Resources[0].Action
-		resource = req.Resources[0].Resource
-	}
-	maxRows := 0
-	for _, item := range req.Resources {
-		if item.MaxRows > maxRows {
-			maxRows = item.MaxRows
+	for _, scope := range req.Resources {
+		decision, err := s.policyEngine.Decide(ctx, policy.Request{
+			Actor:          req.Actor,
+			Subject:        req.Subject,
+			TaskID:         req.TaskID,
+			Action:         scope.Action,
+			Resource:       scope.Resource,
+			MaxRows:        scope.MaxRows,
+			ApprovalStatus: "approved",
+		})
+		if err != nil {
+			return Claims{}, fmt.Errorf("evaluate policy for %s:%s: %w", scope.Connector, scope.Resource, err)
 		}
-	}
-
-	decision, err := s.policyEngine.Decide(ctx, policy.Request{
-		Actor:          req.Actor,
-		Subject:        req.Subject,
-		TaskID:         req.TaskID,
-		Action:         action,
-		Resource:       resource,
-		MaxRows:        maxRows,
-		ApprovalStatus: "approved",
-	})
-	if err != nil {
-		return Claims{}, err
-	}
-	if decision.Effect == "deny" {
-		return Claims{}, fmt.Errorf("grant denied: %s", decision.Reason)
+		switch decision.Effect {
+		case "allow":
+		case "approve":
+			return Claims{}, fmt.Errorf("grant requires approval: %s", decision.Reason)
+		case "deny":
+			return Claims{}, fmt.Errorf("grant denied: %s", decision.Reason)
+		default:
+			return Claims{}, fmt.Errorf("policy returned unsupported effect %q", decision.Effect)
+		}
 	}
 
 	return Claims{
@@ -104,23 +99,34 @@ func (s *Service) validateAttenuation(parentGrantID string, requested []ScopeEnt
 		return fmt.Errorf("unknown parent grant %s", parentGrantID)
 	}
 	for _, item := range requested {
-		matched := false
+		matchedResource := false
+		matchedLimits := false
 		for _, parentItem := range parentScope {
 			if parentItem.Connector != item.Connector || parentItem.Action != item.Action {
 				continue
 			}
-			if !strings.HasPrefix(item.Resource, parentItem.Resource) && !strings.HasPrefix(parentItem.Resource, item.Resource) {
+			if !resourceWithin(parentItem.Resource, item.Resource) {
 				continue
 			}
-			matched = true
-			if item.MaxRows > parentItem.MaxRows {
-				return fmt.Errorf("requested scope %s:%s exceeds parent grant limits", item.Connector, item.Action)
+			matchedResource = true
+			if item.MaxRows <= parentItem.MaxRows {
+				matchedLimits = true
+				break
 			}
-			break
 		}
-		if !matched {
+		if !matchedResource {
 			return fmt.Errorf("requested scope %s:%s exceeds parent grant", item.Connector, item.Action)
+		}
+		if !matchedLimits {
+			return fmt.Errorf("requested scope %s:%s exceeds parent grant limits", item.Connector, item.Action)
 		}
 	}
 	return nil
+}
+
+func resourceWithin(parent, requested string) bool {
+	parent = strings.TrimSuffix(parent, "/")
+	requested = strings.TrimSuffix(requested, "/")
+	return parent != "" && requested != "" &&
+		(requested == parent || strings.HasPrefix(requested, parent+"/"))
 }

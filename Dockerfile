@@ -1,10 +1,13 @@
-FROM golang:1.27 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27 AS build
 WORKDIR /src
-COPY go.mod ./
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/controlplane ./cmd/controlplane && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/proxy ./cmd/proxy
+ARG TARGETOS
+ARG TARGETARCH
+RUN mkdir -p /out && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/controlplane ./cmd/controlplane && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/proxy ./cmd/proxy
 
-FROM alpine:3.20
+FROM gcr.io/distroless/base-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/controlplane /app/controlplane
 COPY --from=build /out/proxy /app/proxy

@@ -1,0 +1,16 @@
+.git
+.github
+.vscode
+.aws
+.firecrawl
+docs
+deploy
+migrations
+**/*_test.go
+*.md
+*.txt
+.env
+.env.*
+*.pem
+*.key
+*.crt

@@ -24,6 +24,15 @@ func Load() Config {
         VaultKeyID: getEnv("VAULT_KEY_ID", "local-dev-key"),
     }
 
+    if value, ok := os.LookupEnv("PORT"); ok && value == "" {
+        panic("PORT is required")
+    }
+    if value, ok := os.LookupEnv("TENANT_ID"); ok && value == "" {
+        panic("TENANT_ID is required")
+    }
+    if value, ok := os.LookupEnv("VAULT_KEY_ID"); ok && value == "" {
+        panic("VAULT_KEY_ID is required")
+    }
     if cfg.Port == "" {
         panic("PORT is required")
     }

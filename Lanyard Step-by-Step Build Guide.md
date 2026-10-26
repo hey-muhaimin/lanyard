@@ -491,6 +491,8 @@ Use server-side pagination, strict CSP, and the same RBAC as the API. Never expo
 
 **Goal:** repeatable, reviewable infrastructure.
 
+**Current repository status:** the container image uses a non-root Distroless runtime, but this deployment goal is not yet met. The proxy currently relies on an in-memory demo KMS and hardcoded demo secret and only starts when `ALLOW_INSECURE_DEMO=true`; the control plane returns `501` for grant issuance and `503` for readiness. Do not deploy this snapshot for production workloads. Persistent grant and secret storage, cloud KMS integration, authenticated grant issuance, revocation, durable audit, and reviewed Kubernetes/IAM infrastructure remain prerequisites.
+
 **Work:**
 
 1. Multi-stage Docker builds to minimal, non-root images; read-only filesystems; dropped capabilities.

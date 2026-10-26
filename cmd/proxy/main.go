@@ -67,6 +67,10 @@ func main() {
 	}
 	upstreamClient := newUpstreamClient()
 
+	if os.Getenv("ALLOW_INSECURE_DEMO") != "true" {
+		logger.Error("proxy requires a production KMS and secret store; set ALLOW_INSECURE_DEMO=true only for local demos", nil)
+		os.Exit(1)
+	}
 	kms := vault.NewMemoryKMS(cfg.VaultKeyID)
 	secretStore := vault.NewStore(kms)
 
@@ -92,7 +96,15 @@ func main() {
 	proxyHandler := newProxyHandler(upstreamURL, upstreamClient, secretStore, cfg.TenantID, logger)
 	mux.Handle("/proxy", token.Gate(tokenVerifier, token.NewDPoPVerifier(), proxyHandler))
 
-	srv := &http.Server{Addr: cfg.Address(), Handler: mux}
+	srv := &http.Server{
+		Addr:              cfg.Address(),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 	go func() {
 		logger.Info("proxy listening", map[string]any{"address": cfg.Address()})
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -111,7 +123,7 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("proxy shutdown failed", map[string]any{"error": err.Error()})
 	}
-	fmt.Println("proxy stopped")
+	logger.Info("proxy stopped", nil)
 }
 
 const maxUpstreamResponseSize = 1 << 20
