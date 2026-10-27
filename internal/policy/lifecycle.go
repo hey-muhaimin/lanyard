@@ -125,15 +125,15 @@ func (l *PolicyLifecycle) Simulate(ctx context.Context, tenantID string, version
 	if err != nil {
 		return nil, fmt.Errorf("simulate Cedar policy: %w", err)
 	}
+	if l.repository != nil {
+		if err := l.repository.SetPolicyVersionState(ctx, tenantID, version, VersionSimulated, changes, VersionValidated); err != nil {
+			return nil, err
+		}
+		return append([]SimulationChange(nil), changes...), nil
+	}
 	l.mu.Lock()
 	entry.State = VersionSimulated
 	entry.Changes = append([]SimulationChange(nil), changes...)
-	if l.repository != nil {
-		if err := l.repository.SetPolicyVersionState(ctx, tenantID, version, VersionSimulated, changes, VersionValidated); err != nil {
-			l.mu.Unlock()
-			return nil, err
-		}
-	}
 	l.versions[tenantID][version] = entry
 	l.mu.Unlock()
 	return changes, nil
@@ -206,9 +206,7 @@ func (l *PolicyLifecycle) setState(ctx context.Context, tenantID string, version
 		if len(expected) != 1 {
 			return errors.New("expected policy state is required for persistent lifecycle")
 		}
-		if err := l.repository.SetPolicyVersionState(ctx, tenantID, version, target, changes, expected[0]); err != nil {
-			return err
-		}
+		return l.repository.SetPolicyVersionState(ctx, tenantID, version, target, changes, expected[0])
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
