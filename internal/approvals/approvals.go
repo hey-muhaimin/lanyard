@@ -1,6 +1,7 @@
 package approvals
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -75,6 +76,17 @@ func (s *Store) List(tenantID string) []Request {
 		}
 	}
 	return requests
+}
+
+func (s *Store) IsApproved(_ context.Context, tenantID, id, action string, parameters any) bool {
+	s.mu.RLock()
+	request, ok := s.requests[id]
+	s.mu.RUnlock()
+	if !ok || request.TenantID != tenantID || request.Action != action || request.Status != "approved" || !request.ExpiresAt.After(time.Now()) {
+		return false
+	}
+	hash, err := ParameterHash(parameters)
+	return err == nil && hash == request.ParameterHash
 }
 
 func (s *Store) Decide(id, tenantID, status string, parameters any, now time.Time) (Request, error) {

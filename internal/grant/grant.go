@@ -32,7 +32,8 @@ type Request struct {
 	Resources      []ScopeEntry
 	TTLSeconds     int
 	ParentGrant    string
-	ApprovalStatus string
+	ApprovalID     string
+	ApprovalParams any
 }
 
 func (r Request) Validate() error {

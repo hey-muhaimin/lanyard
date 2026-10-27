@@ -15,13 +15,17 @@ type Decision struct {
 
 // Request models the policy decision input for a task-scoped grant.
 type Request struct {
+	TenantID       string
 	Actor          string
 	Subject        string
 	TaskID         string
+	Connector      string
 	Action         string
 	Resource       string
 	MaxRows        int
-	ApprovalStatus string
+	TTLSeconds     int
+	ApprovalID     string
+	ApprovalParams any
 }
 
 // Engine decides whether a request is approved, denied, or requires approval.
@@ -44,12 +48,6 @@ func (SimpleEngine) Decide(_ context.Context, req Request) (Decision, error) {
 	}
 	if req.MaxRows > 1000 {
 		return Decision{Effect: "deny", PolicyIDs: []string{"row-limit-policy"}, Reason: "requested row count exceeds the configured limit"}, nil
-	}
-	if req.ApprovalStatus == "pending" {
-		return Decision{Effect: "approve", PolicyIDs: []string{"approval-required"}, Reason: "approval is required before execution"}, nil
-	}
-	if req.ApprovalStatus != "approved" {
-		return Decision{Effect: "deny", PolicyIDs: []string{"approval-required"}, Reason: "grant requires an approved or pending status"}, nil
 	}
 	return Decision{Effect: "allow", PolicyIDs: []string{"default-allow"}, Reason: fmt.Sprintf("grant request for %s accepted", req.Action)}, nil
 }

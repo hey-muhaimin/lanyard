@@ -57,19 +57,19 @@ func (s *Service) Issue(ctx context.Context, req Request) (Claims, error) {
 		}
 	}
 
-	approvalStatus := req.ApprovalStatus
-	if approvalStatus == "" {
-		approvalStatus = "approved"
-	}
 	for _, scope := range req.Resources {
 		decision, err := s.policyEngine.Decide(ctx, policy.Request{
+			TenantID:       tenantID,
 			Actor:          req.Actor,
 			Subject:        req.Subject,
 			TaskID:         req.TaskID,
+			Connector:      scope.Connector,
 			Action:         scope.Action,
 			Resource:       scope.Resource,
 			MaxRows:        scope.MaxRows,
-			ApprovalStatus: approvalStatus,
+			TTLSeconds:     req.TTLSeconds,
+			ApprovalID:     req.ApprovalID,
+			ApprovalParams: req.ApprovalParams,
 		})
 		if err != nil {
 			return Claims{}, fmt.Errorf("evaluate policy for %s:%s: %w", scope.Connector, scope.Resource, err)
