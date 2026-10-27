@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS policies (
   version INT NOT NULL,
   body TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'draft',
+  simulation_diff JSONB NOT NULL DEFAULT '[]'::JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (tenant_id, version)
 );

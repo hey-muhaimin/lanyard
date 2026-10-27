@@ -27,6 +27,7 @@ type compiledPolicy struct {
 
 type CedarEngine struct {
 	loader    TenantEntityLoader
+	policies  PublishedPolicySource
 	approvals ApprovalVerifier
 	mu        sync.RWMutex
 	active    map[string]int
@@ -43,13 +44,19 @@ func (e *CedarEngine) SetApprovalVerifier(verifier ApprovalVerifier) {
 	e.mu.Unlock()
 }
 
+func (e *CedarEngine) SetPolicySource(source PublishedPolicySource) {
+	e.mu.Lock()
+	e.policies = source
+	e.mu.Unlock()
+}
+
 func (e *CedarEngine) Publish(tenantID string, version int, policyText []byte) error {
 	if tenantID == "" || version <= 0 {
 		return errors.New("tenant ID and positive policy version are required")
 	}
-	set, err := cedar.NewPolicySetFromBytes(fmt.Sprintf("tenant-%s-v%d.cedar", tenantID, version), policyText)
+	set, err := compilePolicySet(tenantID, version, policyText)
 	if err != nil {
-		return fmt.Errorf("parse Cedar policy set: %w", err)
+		return err
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -59,6 +66,14 @@ func (e *CedarEngine) Publish(tenantID string, version int, policyText []byte) e
 	e.sets[tenantID][version] = set
 	e.active[tenantID] = version
 	return nil
+}
+
+func compilePolicySet(tenantID string, version int, policyText []byte) (*cedar.PolicySet, error) {
+	set, err := cedar.NewPolicySetFromBytes(fmt.Sprintf("tenant-%s-v%d.cedar", tenantID, version), policyText)
+	if err != nil {
+		return nil, fmt.Errorf("parse Cedar policy set: %w", err)
+	}
+	return set, nil
 }
 
 func (e *CedarEngine) InvalidateTenant(tenantID string) {
@@ -77,10 +92,6 @@ func (e *CedarEngine) ActiveVersion(tenantID string) (int, bool) {
 
 func (e *CedarEngine) Decide(ctx context.Context, req Request) (Decision, error) {
 	deny := Decision{Effect: "deny", PolicyIDs: []string{"cedar-deny-default"}, Reason: "Cedar denied the request"}
-	if req.TenantID == "" || req.Actor == "" || req.Connector == "" || req.Action == "" || req.Resource == "" || req.Subject == "" || req.TaskID == "" {
-		deny.Reason = "tenant, agent, action, resource, subject, and task are required"
-		return deny, nil
-	}
 	e.mu.RLock()
 	version, active := e.active[req.TenantID]
 	var set *cedar.PolicySet
@@ -89,7 +100,36 @@ func (e *CedarEngine) Decide(ctx context.Context, req Request) (Decision, error)
 	}
 	e.mu.RUnlock()
 	if !active || set == nil {
-		return deny, ErrNoPublishedPolicy
+		e.mu.RLock()
+		source := e.policies
+		e.mu.RUnlock()
+		if source == nil {
+			return deny, ErrNoPublishedPolicy
+		}
+		published, err := source.LoadPublishedPolicy(ctx, req.TenantID)
+		if err != nil {
+			return deny, fmt.Errorf("load active Cedar policy: %w", err)
+		}
+		set, err = compilePolicySet(req.TenantID, published.Version, published.Body)
+		if err != nil {
+			return deny, fmt.Errorf("compile loaded Cedar policy: %w", err)
+		}
+		e.mu.Lock()
+		if e.sets[req.TenantID] == nil {
+			e.sets[req.TenantID] = make(map[int]*cedar.PolicySet)
+		}
+		e.sets[req.TenantID][published.Version] = set
+		e.active[req.TenantID] = published.Version
+		e.mu.Unlock()
+	}
+	return e.decideAgainst(ctx, set, req)
+}
+
+func (e *CedarEngine) decideAgainst(ctx context.Context, set *cedar.PolicySet, req Request) (Decision, error) {
+	deny := Decision{Effect: "deny", PolicyIDs: []string{"cedar-deny-default"}, Reason: "Cedar denied the request"}
+	if req.TenantID == "" || req.Actor == "" || req.Connector == "" || req.Action == "" || req.Resource == "" || req.Subject == "" || req.TaskID == "" {
+		deny.Reason = "tenant, agent, action, resource, subject, and task are required"
+		return deny, nil
 	}
 	if e.loader == nil {
 		return deny, errors.New("tenant entity loader is not configured")
@@ -117,6 +157,8 @@ func (e *CedarEngine) Decide(ctx context.Context, req Request) (Decision, error)
 		"ttlSeconds": cedar.Long(req.TTLSeconds),
 		"subject":    cedar.String(req.Subject),
 		"taskId":     cedar.String(req.TaskID),
+		"tenantId":   cedar.String(req.TenantID),
+		"connector":  cedar.String(req.Connector),
 		"approval": cedar.NewRecord(cedar.RecordMap{
 			"status": cedar.String(approvalStatus),
 		}),
@@ -148,7 +190,7 @@ func addRequestEntities(entities cedar.EntityMap, req Request) error {
 	actionID := req.Connector + ":" + req.Action
 	resourceID := req.Connector + "/" + req.Resource
 	data, err := json.Marshal([]map[string]any{
-		{"uid": map[string]string{"type": "Action", "id": actionID}, "attrs": map[string]any{"connector": req.Connector, "verb": req.Action}, "parents": []any{}},
+		{"uid": map[string]string{"type": "Action", "id": actionID}, "attrs": map[string]any{}, "parents": []any{}},
 		{"uid": map[string]string{"type": "Resource", "id": resourceID}, "attrs": map[string]any{"connector": req.Connector, "path": req.Resource}, "parents": []any{}},
 	})
 	if err != nil {

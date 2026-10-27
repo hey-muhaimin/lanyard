@@ -15,17 +15,17 @@ type Decision struct {
 
 // Request models the policy decision input for a task-scoped grant.
 type Request struct {
-	TenantID       string
-	Actor          string
-	Subject        string
-	TaskID         string
-	Connector      string
-	Action         string
-	Resource       string
-	MaxRows        int
-	TTLSeconds     int
-	ApprovalID     string
-	ApprovalParams any
+	TenantID       string `json:"tenant_id"`
+	Actor          string `json:"actor"`
+	Subject        string `json:"subject"`
+	TaskID         string `json:"task_id"`
+	Connector      string `json:"connector"`
+	Action         string `json:"action"`
+	Resource       string `json:"resource"`
+	MaxRows        int    `json:"max_rows"`
+	TTLSeconds     int    `json:"ttl_seconds"`
+	ApprovalID     string `json:"approval_id,omitempty"`
+	ApprovalParams any    `json:"approval_params,omitempty"`
 }
 
 // Engine decides whether a request is approved, denied, or requires approval.
