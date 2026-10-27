@@ -32,11 +32,19 @@ jobs:
           curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cedar-policy/cedar/releases/download/cedar-policy-cli-v4.14.0/cedar-policy-cli-installer.sh | sh -s -- -y
       - name: Validate Cedar policies
         run: cedar validate --schema policies/schema.cedarschema.json --schema-format json --policies policies/default.cedar --policy-format cedar
-      - run: go test ./...
-      - run: go build ./...
-      - name: Apply database migration
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: postgres://lanyard:lanyard@localhost:5432/lanyard?sslmode=disable
+        run: go run ./cmd/migrate
+      - name: Configure integration-test role
         env:
           PGPASSWORD: lanyard
-        run: psql -h localhost -U lanyard -d lanyard -v ON_ERROR_STOP=1 -f migrations/001_init.sql
+        run: psql -h localhost -U lanyard -d lanyard -v ON_ERROR_STOP=1 -c "ALTER ROLE lanyard_app PASSWORD 'lanyard_app'"
+      - name: Test
+        env:
+          TEST_DATABASE_URL: postgres://lanyard_app:lanyard_app@localhost:5432/lanyard?sslmode=disable
+          TEST_ADMIN_DATABASE_URL: postgres://lanyard:lanyard@localhost:5432/lanyard?sslmode=disable
+        run: go test ./...
+      - run: go build ./...
       - name: Build container image
         run: docker build --tag lanyard:ci .

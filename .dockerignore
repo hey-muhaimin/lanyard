@@ -5,7 +5,6 @@
 .firecrawl
 docs
 deploy
-migrations
 **/*_test.go
 *.md
 *.txt

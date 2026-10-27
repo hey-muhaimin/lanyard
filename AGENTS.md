@@ -17,11 +17,12 @@
 - `internal/registry` and `internal/events`: supporting packages (inspect as needed).
 - The `token` package in `internal/token.go` signs and verifies Ed25519 JWTs, publishes JWKS, and verifies DPoP proofs with replay protection. The replay cache is process-local; multi-replica deployments need a shared replay store. Agent `PublicKey` values use unpadded base64url-encoded Ed25519 public keys.
 - Proxy `/proxy` requires a valid bearer grant, DPoP proof, and the `demo:read` / `demo-secret` scope. Configure `TOKEN_KEY_ID`, `TOKEN_ISSUER`, `TOKEN_AUDIENCE`, and `TOKEN_PUBLIC_KEY` (unpadded base64url Ed25519 public key) plus `UPSTREAM_URL` (operator-configured HTTPS URL without query or fragment). Without either configuration, `/proxy` and `/readyz` fail closed; `/jwks.json` publishes the configured public key.
-- `migrations/001_init.sql`: tenants/agents/grants/events; RLS enabled on `grants` with policy `tenant_isolation` using `current_setting('app.tenant_id')::UUID`.
+- `migrations/001_init.sql` is the immutable deployed baseline (tenants/agents/grants/events). `002_tenant_isolation.sql` adds the current schema and tenant hardening; run it with `DATABASE_URL=... go run ./cmd/migrate` (the migration role needs permission to create/alter `lanyard_app`).
 
 ## Commands
 - Build (module root): `go build ./...` 
-- Test: `go test ./internal/vault ./internal/logging ./internal/grant` (unit tests present). `go test ./...` runs all packages.
+- Test: `go test ./...` runs all packages; the DB isolation test requires `TEST_DATABASE_URL` and `TEST_ADMIN_DATABASE_URL` in CI.
+- Migrate: `DATABASE_URL=... go run ./cmd/migrate`; the migration runner is also included as `/app/migrate` in the container image.
 - Run locally (no Docker): 
   - Control plane: `PORT=8080 TENANT_ID=tenant-demo go run ./cmd/controlplane`
   - Proxy: `PORT=8081 TENANT_ID=tenant-demo VAULT_KEY_ID=local-dev-key go run ./cmd/proxy` (proxy preloads a demo secret)
