@@ -21,6 +21,7 @@ import (
 	"github.com/example/lanyard/internal/config"
 	kmsimpl "github.com/example/lanyard/internal/kms"
 	"github.com/example/lanyard/internal/logging"
+	"github.com/example/lanyard/internal/revocation"
 	"github.com/example/lanyard/internal/vault"
 )
 
@@ -107,7 +108,7 @@ func main() {
 		_, _ = w.Write([]byte("ready"))
 	})
 	mux.Handle("/jwks.json", token.JWKSHandler(tokenKeyID, tokenPublicKey))
-	proxyHandler := newProxyHandler(upstreamURL, upstreamClient, secretStore, cfg.TenantID, logger)
+	proxyHandler := newProxyHandler(upstreamURL, upstreamClient, secretStore, cfg.TenantID, logger, revocation.NewStore())
 	mux.Handle("/proxy", token.Gate(tokenVerifier, token.NewDPoPVerifier(), proxyHandler))
 
 	srv := &http.Server{
@@ -203,7 +204,7 @@ func isPublicUnicast(ip net.IP) bool {
 		!ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
 }
 
-func newProxyHandler(upstreamURL *url.URL, client *http.Client, secretStore *vault.Store, tenantID string, logger *logging.Logger) http.Handler {
+func newProxyHandler(upstreamURL *url.URL, client *http.Client, secretStore *vault.Store, tenantID string, logger *logging.Logger, revStore *revocation.Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -218,6 +219,16 @@ func newProxyHandler(upstreamURL *url.URL, client *http.Client, secretStore *vau
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+
+		if revStore.Denied(revocation.Scope{
+			AgentID: claims.Actor,
+			TaskID:  claims.TaskID,
+			TokenID: claims.ID,
+		}, time.Now()) {
+			http.Error(w, "grant revoked", http.StatusForbidden)
+			return
+		}
+
 		secret, err := secretStore.UseOnce(r.Context(), "demo-secret", tenantID)
 		if err != nil || len(secret) == 0 {
 			http.Error(w, "proxy secret unavailable", http.StatusInternalServerError)
