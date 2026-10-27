@@ -19,19 +19,40 @@ async function request(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
-function escapeHTML(value) {
-  const node = document.createElement('div');
-  node.textContent = String(value ?? '');
-  return node.innerHTML;
-}
-
 async function loadAgents() {
   try {
     const agents = await request('/admin/agents');
     document.querySelector('#agent-count').textContent = agents.length;
-    document.querySelector('#agents').innerHTML = agents.length
-      ? agents.map(agent => `<tr><td><strong>${escapeHTML(agent.id)}</strong></td><td>${escapeHTML(agent.owner_subject)}</td><td><span class="badge">${escapeHTML(agent.status || 'active')}</span></td></tr>`).join('')
-      : '<tr><td colspan="3" class="empty">No agents registered</td></tr>';
+    const tbody = document.querySelector('#agents');
+    tbody.textContent = '';
+    if (agents.length) {
+      for (const agent of agents) {
+        const tr = document.createElement('tr');
+        const tdId = document.createElement('td');
+        const strong = document.createElement('strong');
+        strong.textContent = agent.id ?? '';
+        tdId.appendChild(strong);
+        const tdOwner = document.createElement('td');
+        tdOwner.textContent = agent.owner_subject ?? '';
+        const tdStatus = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = agent.status || 'active';
+        tdStatus.appendChild(badge);
+        tr.appendChild(tdId);
+        tr.appendChild(tdOwner);
+        tr.appendChild(tdStatus);
+        tbody.appendChild(tr);
+      }
+    } else {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 3;
+      td.className = 'empty';
+      td.textContent = 'No agents registered';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
   } catch (error) { notice(error.message, true); }
 }
 
@@ -40,9 +61,47 @@ async function loadApprovals() {
     const approvals = await request('/approve');
     const pending = approvals.filter(item => item.status === 'pending');
     document.querySelector('#approval-count').textContent = pending.length;
-    document.querySelector('#approvals').innerHTML = pending.length
-      ? pending.map(item => `<article class="approval"><div><strong>${escapeHTML(item.action)}</strong><p>${escapeHTML(item.task_id)} · ${escapeHTML(item.requester_id)}</p></div><pre>${escapeHTML(JSON.stringify(item.parameters, null, 2))}</pre><div class="approval-actions"><button data-approval="approved" data-id="${escapeHTML(item.id)}" data-parameters="${escapeHTML(JSON.stringify(item.parameters))}">Approve</button><button class="danger" data-approval="denied" data-id="${escapeHTML(item.id)}" data-parameters="${escapeHTML(JSON.stringify(item.parameters))}">Deny</button></div></article>`).join('')
-      : '<p class="empty">No pending approvals</p>';
+    const container = document.querySelector('#approvals');
+    container.textContent = '';
+    if (pending.length) {
+      for (const item of pending) {
+        const article = document.createElement('article');
+        article.className = 'approval';
+        const div = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = item.action ?? '';
+        const p = document.createElement('p');
+        p.textContent = `${item.task_id ?? ''} · ${item.requester_id ?? ''}`;
+        div.appendChild(strong);
+        div.appendChild(p);
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(item.parameters, null, 2);
+        const actions = document.createElement('div');
+        actions.className = 'approval-actions';
+        const approveBtn = document.createElement('button');
+        approveBtn.dataset.approval = 'approved';
+        approveBtn.dataset.id = item.id ?? '';
+        approveBtn.dataset.parameters = JSON.stringify(item.parameters);
+        approveBtn.textContent = 'Approve';
+        const denyBtn = document.createElement('button');
+        denyBtn.className = 'danger';
+        denyBtn.dataset.approval = 'denied';
+        denyBtn.dataset.id = item.id ?? '';
+        denyBtn.dataset.parameters = JSON.stringify(item.parameters);
+        denyBtn.textContent = 'Deny';
+        actions.appendChild(approveBtn);
+        actions.appendChild(denyBtn);
+        article.appendChild(div);
+        article.appendChild(pre);
+        article.appendChild(actions);
+        container.appendChild(article);
+      }
+    } else {
+      const p = document.createElement('p');
+      p.className = 'empty';
+      p.textContent = 'No pending approvals';
+      container.appendChild(p);
+    }
   } catch (error) { notice(error.message, true); }
 }
 
@@ -50,9 +109,32 @@ async function loadReplay() {
   try {
     const events = await request('/events/replay');
     document.querySelector('#event-count').textContent = events.length;
-    document.querySelector('#replay').innerHTML = events.length
-      ? events.map((event, index) => `<article class="timeline-event"><span>${index + 1}</span><div><strong>${escapeHTML(event.payload?.type || 'event')}</strong><pre>${escapeHTML(JSON.stringify(event.payload || {}, null, 2))}</pre></div></article>`).join('')
-      : '<p class="empty">No audit events for this tenant</p>';
+    const container = document.querySelector('#replay');
+    container.textContent = '';
+    if (events.length) {
+      for (let index = 0; index < events.length; index++) {
+        const event = events[index];
+        const article = document.createElement('article');
+        article.className = 'timeline-event';
+        const span = document.createElement('span');
+        span.textContent = String(index + 1);
+        const div = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = event.payload?.type || 'event';
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(event.payload || {}, null, 2);
+        div.appendChild(strong);
+        div.appendChild(pre);
+        article.appendChild(span);
+        article.appendChild(div);
+        container.appendChild(article);
+      }
+    } else {
+      const p = document.createElement('p');
+      p.className = 'empty';
+      p.textContent = 'No audit events for this tenant';
+      container.appendChild(p);
+    }
   } catch (error) { notice(error.message, true); }
 }
 
@@ -74,21 +156,7 @@ document.querySelector('#approvals').addEventListener('click', async event => {
   const button = event.target.closest('[data-approval]');
   if (!button) return;
   try {
-    await request('/approve', { method: 'POST', body: JSON.stringify({ id: button.dataset.id, status: button.dataset.approval, parameters: JSON.parse(button.dataset.parameters) }) });
+    await request('/approve', { method: 'POST', body: JSON.stringify({ id: button.dataset.id, status: button.dataset.approval, parameters: JSON.parse(button.dataset.parameters || '{}') }) });
     notice(`Approval ${button.dataset.approval}`); loadApprovals();
   } catch (error) { notice(error.message, true); }
 });
-
-const dialog = document.querySelector('#agent-dialog');
-document.querySelector('#register-agent').addEventListener('click', () => { dialog.querySelector('[name="tenant_id"]').value = tenantInput.value.trim(); dialog.showModal(); });
-document.querySelector('#agent-form').addEventListener('submit', async event => {
-  if (event.submitter?.value === 'cancel') return;
-  event.preventDefault();
-  const body = Object.fromEntries(new FormData(event.currentTarget));
-  try { await request('/admin/agents', { method: 'POST', body: JSON.stringify(body) }); dialog.close(); event.currentTarget.reset(); loadAgents(); notice('Agent registered'); }
-  catch (error) { notice(error.message, true); }
-});
-
-tenantInput.addEventListener('change', () => { localStorage.setItem('lanyard-tenant', tenantInput.value.trim()); refresh(); });
-tenantInput.value = localStorage.getItem('lanyard-tenant') || 'tenant-demo';
-refresh();

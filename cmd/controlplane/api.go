@@ -189,6 +189,10 @@ func (api *controlPlaneAPI) approveHandler(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 			return
 		}
+		if request.RequesterID != "" && body.RequesterID != "" && request.RequesterID == body.RequesterID {
+			writeJSON(w, http.StatusConflict, map[string]any{"error": "requester cannot approve their own request"})
+			return
+		}
 		writeJSON(w, http.StatusOK, request)
 		return
 	}

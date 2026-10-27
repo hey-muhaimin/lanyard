@@ -30,8 +30,14 @@ jobs:
       - name: Install Cedar CLI
         run: |
           curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cedar-policy/cedar/releases/download/cedar-policy-cli-v4.14.0/cedar-policy-cli-installer.sh | sh -s -- -y
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          echo "/usr/local/bin" >> $GITHUB_PATH
       - name: Validate Cedar policies
-        run: cedar validate --schema policies/schema.cedarschema.json --schema-format json --policies policies/default.cedar --policy-format cedar
+        run: |
+          export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:$PATH"
+          which cedar || true
+          cedar validate --schema policies/schema.cedarschema.json --schema-format json --policies policies/default.cedar --policy-format cedar
       - name: Apply database migrations
         env:
           DATABASE_URL: postgres://lanyard:lanyard@localhost:5432/lanyard?sslmode=disable
