@@ -276,6 +276,27 @@ func PublicKeyThumbprintFromBase64(encoded string) (string, error) {
 	return PublicKeyThumbprint(ed25519.PublicKey(key))
 }
 
+// DecodeEd25519PrivateKey accepts base64url (unpadded) key material of either
+// 32 bytes (Ed25519 seed) or 64 bytes (full private key) and returns a private key.
+func DecodeEd25519PrivateKey(encoded string) (ed25519.PrivateKey, error) {
+	if encoded == "" {
+		return nil, errors.New("Ed25519 private key material is required")
+	}
+	key, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode Ed25519 private key: %w", err)
+	}
+	switch len(key) {
+	case ed25519.SeedSize:
+		return ed25519.NewKeyFromSeed(key), nil
+	case ed25519.PrivateKeySize:
+		return ed25519.PrivateKey(key), nil
+	default:
+		return nil, fmt.Errorf("Ed25519 private key must be a %d-byte seed or a %d-byte private key, got %d bytes",
+			ed25519.SeedSize, ed25519.PrivateKeySize, len(key))
+	}
+}
+
 func DecodeEd25519PublicKey(encoded string) (ed25519.PublicKey, error) {
 	key, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil || len(key) != ed25519.PublicKeySize {

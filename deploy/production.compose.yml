@@ -1,0 +1,60 @@
+name: lanyard
+
+services:
+  controlplane:
+    image: ${LANYARD_IMAGE:?set LANYARD_IMAGE to an immutable image tag}
+    pull_policy: never
+    command: ["/app/controlplane"]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 15s
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      PORT: "8080"
+      LOG_LEVEL: info
+      TENANT_ID: ${TENANT_ID:?set TENANT_ID to the production tenant UUID}
+      AWS_REGION: ap-southeast-2
+      KMS_KEY_ID: alias/lanyard-production-storage
+      VAULT_KEY_ID: alias/lanyard-production-storage
+      DATABASE_SECRET_ARN: ${DATABASE_SECRET_ARN:?set DATABASE_SECRET_ARN}
+      TOKEN_PRIVATE_KEY_SECRET_ARN: ${TOKEN_PRIVATE_KEY_SECRET_ARN:?set TOKEN_PRIVATE_KEY_SECRET_ARN}
+      TOKEN_KEY_ID: ${TOKEN_KEY_ID:?set TOKEN_KEY_ID}
+      TOKEN_ISSUER: ${TOKEN_ISSUER:?set TOKEN_ISSUER}
+      TOKEN_AUDIENCE: ${TOKEN_AUDIENCE:?set TOKEN_AUDIENCE}
+
+  proxy:
+    image: ${LANYARD_IMAGE:?set LANYARD_IMAGE to an immutable image tag}
+    pull_policy: never
+    command: ["/app/proxy"]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 15s
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      PORT: "8081"
+      LOG_LEVEL: info
+      TENANT_ID: ${TENANT_ID:?set TENANT_ID to the production tenant UUID}
+      AWS_REGION: ap-southeast-2
+      KMS_KEY_ID: alias/lanyard-production-storage
+      VAULT_KEY_ID: alias/lanyard-production-storage
+      DATABASE_SECRET_ARN: ${DATABASE_SECRET_ARN:?set DATABASE_SECRET_ARN}
+      UPSTREAM_URL: ${UPSTREAM_URL:?set fixed HTTPS UPSTREAM_URL}
+      UPSTREAM_SECRET_ARN: ${UPSTREAM_SECRET_ARN:?set UPSTREAM_SECRET_ARN}
+      PROXY_CONNECTOR_ID: ${PROXY_CONNECTOR_ID:?set PROXY_CONNECTOR_ID}
+      PROXY_SECRET_ID: ${PROXY_SECRET_ID:?set PROXY_SECRET_ID}
+      TOKEN_KEY_ID: ${TOKEN_KEY_ID:?set TOKEN_KEY_ID}
+      TOKEN_ISSUER: ${TOKEN_ISSUER:?set TOKEN_ISSUER}
+      TOKEN_AUDIENCE: ${TOKEN_AUDIENCE:?set TOKEN_AUDIENCE}
+      TOKEN_PUBLIC_KEY_SECRET_ARN: ${TOKEN_PUBLIC_KEY_SECRET_ARN:?set TOKEN_PUBLIC_KEY_SECRET_ARN}

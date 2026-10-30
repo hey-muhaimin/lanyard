@@ -7,3 +7,4 @@ name = "lanyard-sdk"
 version = "1.0.0"
 requires-python = ">=3.10"
 description = "Lanyard task-scoped identity SDK"
+dependencies = ["cryptography>=43"]

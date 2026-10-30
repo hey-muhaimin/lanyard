@@ -1,6 +1,7 @@
 package token
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"net/http"
@@ -110,6 +111,38 @@ func TestDPoPProofRejectsReplayAndMismatches(t *testing.T) {
 	}
 }
 
+func TestDPoPRequestProofAuthenticatesRegisteredAgent(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	publicKey, privateKey := testKeyPair(t, 8)
+	thumbprint, err := PublicKeyThumbprint(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const target = "https://controlplane.example/grant"
+	proof, err := NewDPoPRequestProof(privateKey, http.MethodPost, target, "grant-proof-1", now)
+	if err != nil {
+		t.Fatalf("NewDPoPRequestProof() error = %v", err)
+	}
+	verifier := NewDPoPVerifier()
+	if err := verifier.VerifyRequest(proof, thumbprint, http.MethodPost, target, now); err != nil {
+		t.Fatalf("VerifyRequest() error = %v", err)
+	}
+	if err := verifier.VerifyRequest(proof, thumbprint, http.MethodPost, target, now); err == nil {
+		t.Fatal("VerifyRequest() accepted a replayed proof")
+	}
+	if err := NewDPoPVerifier().VerifyRequest(proof, thumbprint, http.MethodGet, target, now); err == nil {
+		t.Fatal("VerifyRequest() accepted a proof bound to another method")
+	}
+	otherKey, _ := testKeyPair(t, 9)
+	otherThumbprint, err := PublicKeyThumbprint(otherKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewDPoPVerifier().VerifyRequest(proof, otherThumbprint, http.MethodPost, target, now); err == nil {
+		t.Fatal("VerifyRequest() accepted a proof from another agent key")
+	}
+}
+
 func TestDPoPConcurrentReplayOnlyAcceptedOnce(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	publicKey, privateKey := testKeyPair(t, 6)
@@ -183,6 +216,36 @@ func TestGateAuthenticatesAndAttachesClaims(t *testing.T) {
 	handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "http://proxy.example/proxy", nil))
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("Gate() without credentials status = %d, want %d", unauthorized.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestDecodeEd25519PrivateKey(t *testing.T) {
+	_, privateKey := testKeyPair(t, 7)
+	tests := []struct {
+		name    string
+		encoded string
+		want    ed25519.PrivateKey
+		wantErr bool
+	}{
+		{name: "32-byte seed", encoded: base64.RawURLEncoding.EncodeToString(privateKey.Seed()), want: privateKey},
+		{name: "64-byte full key", encoded: base64.RawURLEncoding.EncodeToString(privateKey), want: privateKey},
+		{name: "wrong length", encoded: base64.RawURLEncoding.EncodeToString(privateKey.Seed()[:16]), wantErr: true},
+		{name: "malformed base64", encoded: "not*valid*base64", wantErr: true},
+		{name: "empty", encoded: "", wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := DecodeEd25519PrivateKey(test.encoded)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("DecodeEd25519PrivateKey() error = %v, wantErr %v", err, test.wantErr)
+			}
+			if test.wantErr {
+				return
+			}
+			if !bytes.Equal(got, test.want) {
+				t.Fatal("DecodeEd25519PrivateKey() returned the wrong key")
+			}
+		})
 	}
 }
 

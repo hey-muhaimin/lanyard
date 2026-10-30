@@ -18,11 +18,13 @@ import (
 	"time"
 
 	token "github.com/example/lanyard/internal"
+	"github.com/example/lanyard/internal/awssecrets"
 	"github.com/example/lanyard/internal/config"
 	kmsimpl "github.com/example/lanyard/internal/kms"
 	"github.com/example/lanyard/internal/logging"
 	"github.com/example/lanyard/internal/revocation"
 	"github.com/example/lanyard/internal/vault"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -32,7 +34,39 @@ func main() {
 	tokenIssuer := os.Getenv("TOKEN_ISSUER")
 	tokenAudience := os.Getenv("TOKEN_AUDIENCE")
 	tokenPublicKeyText := os.Getenv("TOKEN_PUBLIC_KEY")
+	var secrets *awssecrets.Reader
+	if !cfg.DevMode {
+		publicKeyARN := os.Getenv("TOKEN_PUBLIC_KEY_SECRET_ARN")
+		if publicKeyARN == "" {
+			logger.Error("TOKEN_PUBLIC_KEY_SECRET_ARN is required outside demo mode", nil)
+			os.Exit(1)
+		}
+		var err error
+		secrets, err = awssecrets.NewFromEnv(context.Background(), cfg.AWSRegion)
+		if err != nil {
+			logger.Error("failed to initialize Secrets Manager client", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+		tokenPublicKeyText, err = secrets.String(context.Background(), publicKeyARN)
+		if err != nil {
+			logger.Error("failed to load proxy verification key", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+	}
 	upstreamURLText := os.Getenv("UPSTREAM_URL")
+	connectorID := cfg.ProxyConnectorID
+	secretID := cfg.ProxySecretID
+	if cfg.DevMode {
+		if connectorID == "" {
+			connectorID = "demo"
+		}
+		if secretID == "" {
+			secretID = "demo-secret"
+		}
+	} else if connectorID == "" || secretID == "" {
+		logger.Error("PROXY_CONNECTOR_ID and PROXY_SECRET_ID are required outside demo mode", nil)
+		os.Exit(1)
+	}
 
 	var tokenPublicKey ed25519.PublicKey
 	var tokenVerifier *token.Verifier
@@ -85,13 +119,55 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	secretStore := vault.NewStore(kms)
-
+	var secretStore vault.SecretReader
+	var databasePool *pgxpool.Pool
 	if cfg.DevMode {
-		if err := secretStore.Put(context.Background(), cfg.VaultKeyID, cfg.TenantID, "demo-secret", []byte("super-secret-value")); err != nil {
+		store := vault.NewStore(kms)
+		if err := store.Put(context.Background(), cfg.VaultKeyID, cfg.TenantID, "demo-secret", []byte("super-secret-value")); err != nil {
 			logger.Error("secret put failed", map[string]any{"error": err.Error()})
 			os.Exit(1)
 		}
+		secretStore = store
+	} else {
+		if cfg.DatabaseSecretARN == "" || cfg.UpstreamSecretARN == "" || cfg.ProxyConnectorID == "" || cfg.ProxySecretID == "" {
+			logger.Error("DATABASE_SECRET_ARN, UPSTREAM_SECRET_ARN, PROXY_CONNECTOR_ID, and PROXY_SECRET_ID are required outside demo mode", nil)
+			os.Exit(1)
+		}
+		var err error
+		if secrets == nil {
+			logger.Error("Secrets Manager client is unavailable", nil)
+			os.Exit(1)
+		}
+		databaseURL, err := secrets.PostgresURL(context.Background(), cfg.DatabaseSecretARN)
+		if err != nil {
+			logger.Error("failed to load database credentials", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+		databasePool, err = pgxpool.New(context.Background(), databaseURL)
+		if err != nil {
+			logger.Error("failed to create proxy database pool", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+		defer databasePool.Close()
+		if err := databasePool.Ping(context.Background()); err != nil {
+			logger.Error("failed to connect proxy database", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+		store := vault.NewPostgresStore(databasePool, kms)
+		upstreamSecret, err := secrets.String(context.Background(), cfg.UpstreamSecretARN)
+		if err != nil {
+			logger.Error("failed to load upstream credential", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+		secretBytes := []byte(upstreamSecret)
+		upstreamSecret = ""
+		if err := store.EnsureForConnector(context.Background(), cfg.KMSKeyID, cfg.TenantID, cfg.ProxyConnectorID, cfg.ProxySecretID, secretBytes); err != nil {
+			clear(secretBytes)
+			logger.Error("failed to persist upstream credential", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+		clear(secretBytes)
+		secretStore = store
 	}
 
 	mux := http.NewServeMux()
@@ -104,11 +180,17 @@ func main() {
 			http.Error(w, "proxy authentication or upstream is not configured", http.StatusServiceUnavailable)
 			return
 		}
+		if databasePool != nil {
+			if err := databasePool.Ping(r.Context()); err != nil {
+				http.Error(w, "proxy database is not ready", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
 	})
 	mux.Handle("/jwks.json", token.JWKSHandler(tokenKeyID, tokenPublicKey))
-	proxyHandler := newProxyHandler(upstreamURL, upstreamClient, secretStore, cfg.TenantID, logger, revocation.NewStore())
+	proxyHandler := newProxyHandler(upstreamURL, upstreamClient, secretStore, cfg.TenantID, connectorID, secretID, logger, revocation.NewStore())
 	mux.Handle("/proxy", token.Gate(tokenVerifier, token.NewDPoPVerifier(), proxyHandler))
 
 	srv := &http.Server{
@@ -204,7 +286,7 @@ func isPublicUnicast(ip net.IP) bool {
 		!ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
 }
 
-func newProxyHandler(upstreamURL *url.URL, client *http.Client, secretStore *vault.Store, tenantID string, logger *logging.Logger, revStore *revocation.Store) http.Handler {
+func newProxyHandler(upstreamURL *url.URL, client *http.Client, secretStore vault.SecretReader, tenantID, connectorID, secretID string, logger *logging.Logger, revStore *revocation.Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -215,7 +297,7 @@ func newProxyHandler(upstreamURL *url.URL, client *http.Client, secretStore *vau
 			return
 		}
 		claims, ok := token.ClaimsFromRequest(r)
-		if !ok || claims.TenantID != tenantID || !token.HasScope(claims, "demo", "read", "demo-secret") {
+		if !ok || claims.TenantID != tenantID || !token.HasScope(claims, connectorID, "read", secretID) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -229,7 +311,7 @@ func newProxyHandler(upstreamURL *url.URL, client *http.Client, secretStore *vau
 			return
 		}
 
-		secret, err := secretStore.UseOnce(r.Context(), "demo-secret", tenantID)
+		secret, err := secretStore.Get(r.Context(), secretID, tenantID)
 		if err != nil || len(secret) == 0 {
 			http.Error(w, "proxy secret unavailable", http.StatusInternalServerError)
 			if err != nil {

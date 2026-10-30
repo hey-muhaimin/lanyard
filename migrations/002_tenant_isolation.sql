@@ -19,6 +19,7 @@ CREATE OR REPLACE FUNCTION current_tenant() RETURNS uuid
 LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('app.tenant_id', true), '')::uuid $$;
 
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS attestation JSONB NOT NULL DEFAULT '{}'::JSONB;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS slug TEXT;
 
 CREATE TABLE IF NOT EXISTS connectors (
   id UUID PRIMARY KEY,
@@ -83,6 +84,7 @@ SELECT pg_temp.ensure_constraint('agents', 'agents_tenant_name_key', 'UNIQUE (te
 SELECT pg_temp.ensure_constraint('agents', 'agents_id_tenant_key', 'UNIQUE (id, tenant_id)');
 SELECT pg_temp.ensure_constraint('agents', 'agents_status_chk',
   $c$CHECK (status IN ('active','suspended','deleted'))$c$);
+CREATE UNIQUE INDEX IF NOT EXISTS agents_slug_idx ON agents (tenant_id, slug);
 SELECT pg_temp.ensure_constraint('grants', 'grants_id_tenant_key', 'UNIQUE (id, tenant_id)');
 SELECT pg_temp.ensure_constraint('grants', 'grants_agent_tenant_fk',
   'FOREIGN KEY (agent_id, tenant_id) REFERENCES agents (id, tenant_id)');

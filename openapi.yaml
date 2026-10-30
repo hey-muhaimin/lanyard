@@ -9,13 +9,29 @@ paths:
     get: { responses: { '200': { description: Ready } } }
   /grant:
     post:
+      parameters:
+        - name: DPoP
+          in: header
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/GrantRequest' }
       responses:
-        '202': { description: Grant accepted or approval pending }
+        '200':
+          description: Grant issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [access_token, token_type, expires_in]
+                properties:
+                  access_token: { type: string }
+                  token_type: { type: string, enum: [Bearer] }
+                  expires_in: { type: integer }
+        '401': { description: Agent proof missing or invalid }
   /revoke:
     post:
       responses: { '202': { description: Revocation published } }

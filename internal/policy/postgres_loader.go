@@ -25,7 +25,7 @@ func (l PostgresEntityLoader) LoadTenantEntities(ctx context.Context, tenantID, 
 	var entities cedar.EntityMap
 	err := db.WithTenant(ctx, l.Pool, tenantID, func(tx pgx.Tx) error {
 		var agentID, agentTenant, status string
-		if err := tx.QueryRow(ctx, `SELECT id::text, tenant_id::text, status FROM agents WHERE id::text = $1`, actor).Scan(&agentID, &agentTenant, &status); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT slug, tenant_id::text, status FROM agents WHERE slug = $1`, actor).Scan(&agentID, &agentTenant, &status); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return fmt.Errorf("load Cedar agent: %w", ErrTenantEntityNotFound)
 			}

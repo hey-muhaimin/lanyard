@@ -7,27 +7,47 @@ import (
 
 // Config holds the runtime settings for the Lanyard services.
 type Config struct {
-	Host       string
-	Port       string
-	LogLevel   string
-	TenantID   string
-	VaultKeyID string
-	KMSKeyID   string // env KMS_KEY_ID
-	AWSRegion  string // env AWS_REGION
-	DevMode    bool   // env ALLOW_INSECURE_DEMO == "true"
+	Host                     string
+	Port                     string
+	LogLevel                 string
+	TenantID                 string
+	VaultKeyID               string
+	KMSKeyID                 string // env KMS_KEY_ID
+	AWSRegion                string // env AWS_REGION
+	DatabaseURL              string // env DATABASE_URL
+	DatabaseSecretARN        string // env DATABASE_SECRET_ARN
+	TokenPrivateKeySecretARN string // env TOKEN_PRIVATE_KEY_SECRET_ARN
+	UpstreamSecretARN        string // env UPSTREAM_SECRET_ARN
+	ProxyConnectorID         string // env PROXY_CONNECTOR_ID
+	ProxySecretID            string // env PROXY_SECRET_ID
+	DevMode                  bool   // env ALLOW_INSECURE_DEMO == "true"
+
+	tokenKeyID    string // env TOKEN_KEY_ID
+	tokenIssuer   string // env TOKEN_ISSUER
+	tokenAudience string // env TOKEN_AUDIENCE
 }
 
 // Load reads environment variables and fails fast when required values are missing.
 func Load() Config {
 	cfg := Config{
-		Host:       getEnv("HOST", "0.0.0.0"),
-		Port:       getEnv("PORT", "8080"),
-		LogLevel:   getEnv("LOG_LEVEL", "info"),
-		TenantID:   getEnv("TENANT_ID", "tenant-demo"),
-		VaultKeyID: getEnv("VAULT_KEY_ID", "local-dev-key"),
-		KMSKeyID:   getEnv("KMS_KEY_ID", ""),
-		AWSRegion:  getEnv("AWS_REGION", ""),
-		DevMode:    os.Getenv("ALLOW_INSECURE_DEMO") == "true",
+		Host:                     getEnv("HOST", "0.0.0.0"),
+		Port:                     getEnv("PORT", "8080"),
+		LogLevel:                 getEnv("LOG_LEVEL", "info"),
+		TenantID:                 getEnv("TENANT_ID", "tenant-demo"),
+		VaultKeyID:               getEnv("VAULT_KEY_ID", "local-dev-key"),
+		KMSKeyID:                 getEnv("KMS_KEY_ID", ""),
+		AWSRegion:                getEnv("AWS_REGION", ""),
+		DatabaseURL:              getEnv("DATABASE_URL", ""),
+		DatabaseSecretARN:        getEnv("DATABASE_SECRET_ARN", ""),
+		TokenPrivateKeySecretARN: getEnv("TOKEN_PRIVATE_KEY_SECRET_ARN", ""),
+		UpstreamSecretARN:        getEnv("UPSTREAM_SECRET_ARN", ""),
+		ProxyConnectorID:         getEnv("PROXY_CONNECTOR_ID", ""),
+		ProxySecretID:            getEnv("PROXY_SECRET_ID", ""),
+		DevMode:                  os.Getenv("ALLOW_INSECURE_DEMO") == "true",
+
+		tokenKeyID:    getEnv("TOKEN_KEY_ID", "local-dev-key"),
+		tokenIssuer:   getEnv("TOKEN_ISSUER", "lanyard-controlplane"),
+		tokenAudience: getEnv("TOKEN_AUDIENCE", "lanyard-proxy"),
 	}
 
 	if value, ok := os.LookupEnv("PORT"); ok && value == "" {
@@ -61,6 +81,21 @@ func getEnv(key, fallback string) string {
 
 func (c Config) Address() string {
 	return fmt.Sprintf("%s:%s", c.Host, c.Port)
+}
+
+// TokenKeyID returns the key ID used to sign issued access tokens.
+func (c Config) TokenKeyID() string {
+	return c.tokenKeyID
+}
+
+// Issuer returns the JWT issuer claim for issued access tokens.
+func (c Config) Issuer() string {
+	return c.tokenIssuer
+}
+
+// Audience returns the JWT audience claim for issued access tokens.
+func (c Config) Audience() string {
+	return c.tokenAudience
 }
 
 // ValidateProduction returns an error when not in dev mode and KMS is not configured.

@@ -7,33 +7,62 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/example/lanyard/internal/grantstore"
 	"github.com/example/lanyard/internal/policy"
-	"github.com/example/lanyard/internal/registry"
 )
 
-func TestIssueGrant(t *testing.T) {
-	reg := registry.New()
-	if err := reg.CreateTenant("tenant-1", "Acme"); err != nil {
-		t.Fatalf("CreateTenant() error = %v", err)
-	}
-	if err := reg.RegisterAgent(registry.Agent{
-		ID:           "agent-1",
-		TenantID:     "tenant-1",
-		Name:         "support-bot",
-		OwnerSubject: "user:alice",
-		PublicKey:    testPublicKey(),
-		Status:       "active",
-	}); err != nil {
-		t.Fatalf("RegisterAgent() error = %v", err)
-	}
+// mockStore is an in-memory stand-in for grantstore.Store used by unit tests.
+// It never touches the database; it only answers the queries Service.Issue needs.
+type mockStore struct {
+	tenant string
+	agent  grantstore.Agent
+}
 
-	svc := NewService(reg, policy.SimpleEngine{})
+func (m *mockStore) ValidateAgent(ctx context.Context, id string) error {
+	return nil
+}
+
+func (m *mockStore) GetAgent(ctx context.Context, id string) (grantstore.Agent, bool) {
+	return m.agent, m.agent.ID != ""
+}
+
+func (m *mockStore) TenantForAgent(ctx context.Context, id string) (string, error) {
+	return m.tenant, nil
+}
+
+func (m *mockStore) RegisterAgent(ctx context.Context, agent grantstore.Agent) error {
+	m.agent = agent
+	return nil
+}
+
+func (m *mockStore) CreateTenant(ctx context.Context, id, name string) error {
+	return nil
+}
+
+func (m *mockStore) RegisterConnector(ctx context.Context, connector grantstore.Connector) error {
+	return nil
+}
+
+func TestIssueGrant(t *testing.T) {
+	store := &mockStore{
+		tenant: "tenant-1",
+		agent: grantstore.Agent{
+			ID:           "agent-1",
+			TenantID:     "tenant-1",
+			Name:         "support-bot",
+			OwnerSubject: "user:alice",
+			PublicKey:    testPublicKey(),
+			Status:       "active",
+		},
+	}
+	svc := NewService(store, policy.SimpleEngine{})
+
 	claims, err := svc.Issue(context.Background(), Request{
-		Subject:    "user:alice",
-		Actor:      "agent-1",
-		TaskID:     "task-42",
-		Purpose:    "crm-read",
-		Resources:  []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts/42", MaxRows: 10}},
+		Subject:  "user:alice",
+		Actor:    "agent-1",
+		TaskID:   "task-42",
+		Purpose:  "crm-read",
+		Resources: []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts/42", MaxRows: 10}},
 		TTLSeconds: 300,
 	})
 	if err != nil {
@@ -48,25 +77,29 @@ func TestIssueGrant(t *testing.T) {
 }
 
 func TestIssueRejectsWiderChildScope(t *testing.T) {
-	reg := registry.New()
-	if err := reg.CreateTenant("tenant-1", "Acme"); err != nil {
-		t.Fatalf("CreateTenant() error = %v", err)
+	store := &mockStore{
+		tenant: "tenant-1",
+		agent: grantstore.Agent{
+			ID:     "agent-1",
+			TenantID: "tenant-1",
+			Name:   "support-bot",
+			OwnerSubject: "user:alice",
+			PublicKey: testPublicKey(),
+			Status: "active",
+		},
 	}
-	if err := reg.RegisterAgent(registry.Agent{ID: "agent-1", TenantID: "tenant-1", Name: "support-bot", OwnerSubject: "user:alice", PublicKey: testPublicKey(), Status: "active"}); err != nil {
-		t.Fatalf("RegisterAgent() error = %v", err)
-	}
+	svc := NewService(store, policy.SimpleEngine{})
 
-	svc := NewService(reg, policy.SimpleEngine{})
 	svc.RegisterParentGrant("parent-1", []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts", MaxRows: 10}})
 
 	_, err := svc.Issue(context.Background(), Request{
-		Subject:     "user:alice",
-		Actor:       "agent-1",
-		TaskID:      "task-43",
-		Purpose:     "crm-read",
+		Subject:   "user:alice",
+		Actor:     "agent-1",
+		TaskID:    "task-43",
+		Purpose:   "crm-read",
 		ParentGrant: "parent-1",
-		Resources:   []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts/99", MaxRows: 50}},
-		TTLSeconds:  300,
+		Resources: []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts/99", MaxRows: 50}},
+		TTLSeconds: 300,
 	})
 	if err == nil {
 		t.Fatal("Issue() accepted a child scope that exceeded parent scope")
@@ -87,8 +120,8 @@ func TestIssueParentScopeRequiresSegmentBoundedAttenuation(t *testing.T) {
 		{name: "sibling path is rejected", parent: "accounts/42", requested: "accounts/43", wantErr: true},
 	}
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			svc := newTestService(t, policy.SimpleEngine{})
+			t.Run(test.name, func(t *testing.T) {
+				svc := newTestService(t, policy.SimpleEngine{})
 			svc.RegisterParentGrant("parent-1", []ScopeEntry{{
 				Connector: "crm",
 				Action:    "read",
@@ -96,9 +129,9 @@ func TestIssueParentScopeRequiresSegmentBoundedAttenuation(t *testing.T) {
 				MaxRows:   20,
 			}})
 			_, err := svc.Issue(context.Background(), Request{
-				Subject:     "user:alice",
-				Actor:       "agent-1",
-				TaskID:      "task-44",
+				Subject:   "user:alice",
+				Actor:     "agent-1",
+				TaskID:    "task-44",
 				ParentGrant: "parent-1",
 				Resources: []ScopeEntry{{
 					Connector: "crm",
@@ -234,15 +267,16 @@ func (engine decisionEngine) Decide(ctx context.Context, req policy.Request) (po
 
 func newTestService(t *testing.T, engine policy.Engine) *Service {
 	t.Helper()
-	reg := registry.New()
-	if err := reg.CreateTenant("tenant-1", "Acme"); err != nil {
-		t.Fatalf("CreateTenant() error = %v", err)
+	store := &mockStore{
+		tenant: "tenant-1",
+		agent: grantstore.Agent{
+			ID:           "agent-1",
+			TenantID:     "tenant-1",
+			Name:         "support-bot",
+			OwnerSubject: "user:alice",
+			PublicKey:    testPublicKey(),
+			Status:       "active",
+		},
 	}
-	if err := reg.RegisterAgent(registry.Agent{
-		ID: "agent-1", TenantID: "tenant-1", Name: "support-bot",
-		OwnerSubject: "user:alice", PublicKey: testPublicKey(),
-	}); err != nil {
-		t.Fatalf("RegisterAgent() error = %v", err)
-	}
-	return NewService(reg, engine)
+	return NewService(store, engine)
 }

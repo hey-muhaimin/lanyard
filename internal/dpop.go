@@ -36,7 +36,7 @@ type proofClaims struct {
 	TargetURL string `json:"htu"`
 	IssuedAt  int64  `json:"iat"`
 	ID        string `json:"jti"`
-	TokenHash string `json:"ath"`
+	TokenHash string `json:"ath,omitempty"`
 }
 
 type DPoPVerifier struct {
@@ -51,6 +51,16 @@ func NewDPoPVerifier() *DPoPVerifier {
 }
 
 func (v *DPoPVerifier) Verify(proof, accessToken, expectedThumbprint, method, targetURL string, now time.Time) error {
+	return v.verify(proof, accessToken, expectedThumbprint, method, targetURL, now, true)
+}
+
+// VerifyRequest verifies a DPoP proof for a token-issuing request, where no
+// access token exists yet and the RFC 9449 ath claim is therefore omitted.
+func (v *DPoPVerifier) VerifyRequest(proof, expectedThumbprint, method, targetURL string, now time.Time) error {
+	return v.verify(proof, "", expectedThumbprint, method, targetURL, now, false)
+}
+
+func (v *DPoPVerifier) verify(proof, accessToken, expectedThumbprint, method, targetURL string, now time.Time, requireTokenHash bool) error {
 	if len(proof) == 0 || len(proof) > maxProofSize {
 		return errors.New("invalid DPoP proof size")
 	}
@@ -119,9 +129,13 @@ func (v *DPoPVerifier) Verify(proof, accessToken, expectedThumbprint, method, ta
 	if delta := now.Sub(time.Unix(claims.IssuedAt, 0)); delta > v.window || delta < -v.window {
 		return errors.New("DPoP proof is outside the allowed time window")
 	}
-	tokenHash := sha256.Sum256([]byte(accessToken))
-	if claims.TokenHash != base64.RawURLEncoding.EncodeToString(tokenHash[:]) {
-		return errors.New("DPoP access-token hash mismatch")
+	if requireTokenHash {
+		tokenHash := sha256.Sum256([]byte(accessToken))
+		if claims.TokenHash != base64.RawURLEncoding.EncodeToString(tokenHash[:]) {
+			return errors.New("DPoP access-token hash mismatch")
+		}
+	} else if claims.TokenHash != "" {
+		return errors.New("DPoP token-request proof must omit access-token hash")
 	}
 	return v.remember(thumbprint+":"+claims.ID, now)
 }
@@ -153,6 +167,16 @@ func isAbsoluteURL(raw string) bool {
 }
 
 func NewDPoPProof(privateKey ed25519.PrivateKey, accessToken, method, targetURL, proofID string, now time.Time) (string, error) {
+	return newDPoPProof(privateKey, accessToken, method, targetURL, proofID, now, true)
+}
+
+// NewDPoPRequestProof creates a proof for a request that obtains an access
+// token, so the proof omits ath because the token does not exist yet.
+func NewDPoPRequestProof(privateKey ed25519.PrivateKey, method, targetURL, proofID string, now time.Time) (string, error) {
+	return newDPoPProof(privateKey, "", method, targetURL, proofID, now, false)
+}
+
+func newDPoPProof(privateKey ed25519.PrivateKey, accessToken, method, targetURL, proofID string, now time.Time, includeTokenHash bool) (string, error) {
 	if len(privateKey) != ed25519.PrivateKeySize {
 		return "", errors.New("invalid Ed25519 private key size")
 	}
@@ -172,11 +196,12 @@ func NewDPoPProof(privateKey ed25519.PrivateKey, accessToken, method, targetURL,
 	if err != nil {
 		return "", fmt.Errorf("marshal DPoP header: %w", err)
 	}
-	tokenHash := sha256.Sum256([]byte(accessToken))
-	payload, err := json.Marshal(proofClaims{
-		Method: method, TargetURL: targetURL, IssuedAt: now.Unix(), ID: proofID,
-		TokenHash: base64.RawURLEncoding.EncodeToString(tokenHash[:]),
-	})
+	claims := proofClaims{Method: method, TargetURL: targetURL, IssuedAt: now.Unix(), ID: proofID}
+	if includeTokenHash {
+		tokenHash := sha256.Sum256([]byte(accessToken))
+		claims.TokenHash = base64.RawURLEncoding.EncodeToString(tokenHash[:])
+	}
+	payload, err := json.Marshal(claims)
 	if err != nil {
 		return "", fmt.Errorf("marshal DPoP claims: %w", err)
 	}

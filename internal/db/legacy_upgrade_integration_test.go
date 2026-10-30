@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io/fs"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/example/lanyard/migrations"
@@ -150,8 +152,18 @@ func TestLegacySchemaUpgradePreservesData(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if len(applied) != 2 {
-		t.Fatalf("expected 2 migrations recorded, got %v", applied)
+	entries, err := fs.ReadDir(migrations.Files, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationCount := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			migrationCount++
+		}
+	}
+	if len(applied) != migrationCount {
+		t.Fatalf("expected %d migrations recorded, got %v", migrationCount, applied)
 	}
 
 	// Second run must be safe (idempotent)

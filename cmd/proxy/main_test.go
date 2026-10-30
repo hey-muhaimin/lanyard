@@ -14,8 +14,8 @@ import (
 
 	token "github.com/example/lanyard/internal"
 	"github.com/example/lanyard/internal/logging"
-	"github.com/example/lanyard/internal/vault"
 	"github.com/example/lanyard/internal/revocation"
+	"github.com/example/lanyard/internal/vault"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -97,7 +97,7 @@ func TestProxyForwardsOnlyScopedRequestsAndScrubsCredentials(t *testing.T) {
 			Body: io.NopCloser(strings.NewReader(`{"credential":"` + secret + `"}`)),
 		}, nil
 	})}
-	handler := newProxyHandler(target, client, store, tenantID, logging.NewJSONLogger(), revocation.NewStore())
+	handler := newProxyHandler(target, client, store, tenantID, "demo", "demo-secret", logging.NewJSONLogger(), revocation.NewStore())
 	gated := createTestGate(t, handler, true)
 	request := httptest.NewRequest(http.MethodGet, "https://proxy.example/proxy", nil)
 	request.Header.Set("Cookie", "session=agent-cookie")
@@ -137,7 +137,7 @@ func TestProxyDeniesMissingScopeWithoutCallingUpstream(t *testing.T) {
 		called = true
 		return nil, nil
 	})}
-	handler := newProxyHandler(target, client, store, "tenant-1", logging.NewJSONLogger(), revocation.NewStore())
+	handler := newProxyHandler(target, client, store, "tenant-1", "demo", "demo-secret", logging.NewJSONLogger(), revocation.NewStore())
 	gated := createTestGate(t, handler, false)
 	request := httptest.NewRequest(http.MethodGet, "https://proxy.example/proxy", nil)
 	recorder := httptest.NewRecorder()

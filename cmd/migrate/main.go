@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/example/lanyard/internal/awssecrets"
 	"github.com/example/lanyard/internal/db"
 	"github.com/example/lanyard/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,7 +15,18 @@ import (
 func main() {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		log.Fatal("DATABASE_URL is required")
+		secretARN := os.Getenv("DATABASE_SECRET_ARN")
+		if secretARN == "" {
+			log.Fatal("DATABASE_SECRET_ARN is required")
+		}
+		secrets, err := awssecrets.NewFromEnv(context.Background(), os.Getenv("AWS_REGION"))
+		if err != nil {
+			log.Fatalf("initialize Secrets Manager: %v", err)
+		}
+		databaseURL, err = secrets.PostgresURL(context.Background(), secretARN)
+		if err != nil {
+			log.Fatalf("load PostgreSQL credentials: %v", err)
+		}
 	}
 
 	ctx := context.Background()

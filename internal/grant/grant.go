@@ -25,15 +25,15 @@ type Claims struct {
 
 // Request captures the data required to create a task-scoped grant.
 type Request struct {
-	Subject        string
-	Actor          string
-	TaskID         string
-	Purpose        string
-	Resources      []ScopeEntry
-	TTLSeconds     int
-	ParentGrant    string
-	ApprovalID     string
-	ApprovalParams any
+	Subject        string       `json:"subject"`
+	Actor          string       `json:"actor"`
+	TaskID         string       `json:"task_id"`
+	Purpose        string       `json:"purpose,omitempty"`
+	Resources      []ScopeEntry `json:"resources"`
+	TTLSeconds     int          `json:"ttl_seconds"`
+	ParentGrant    string       `json:"parent_grant,omitempty"`
+	ApprovalID     string       `json:"approval_id,omitempty"`
+	ApprovalParams any          `json:"approval_params,omitempty"`
 }
 
 func (r Request) Validate() error {

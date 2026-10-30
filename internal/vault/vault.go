@@ -32,6 +32,7 @@ var (
 	ErrKMSTenantMismatch  = errors.New("kms encryption context mismatch")
 	ErrInvalidTenant      = errors.New("invalid tenant")
 	ErrUnsupportedVersion = errors.New("unsupported secret record version")
+	ErrSecretNotFound     = errors.New("secret not found")
 )
 
 // KMS is the provider-agnostic key-management seam. Implementations generate
@@ -204,6 +205,10 @@ type Store struct {
 	items map[string]SecretRecord
 }
 
+type SecretReader interface {
+	Get(context.Context, string, string) ([]byte, error)
+}
+
 func NewStore(kms KMS) *Store {
 	return &Store{kms: kms, items: map[string]SecretRecord{}}
 }
@@ -245,7 +250,7 @@ func (s *Store) Get(ctx context.Context, id, tenantID string) ([]byte, error) {
 	item, ok := s.items[id]
 	s.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("vault: secret %q not found", id)
+		return nil, fmt.Errorf("vault: secret %q: %w", id, ErrSecretNotFound)
 	}
 	if item.TenantID != tenantID {
 		return nil, fmt.Errorf("vault: secret %q belongs to another tenant", id)

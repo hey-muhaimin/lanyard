@@ -6,23 +6,45 @@ import (
 	"strings"
 
 	token "github.com/example/lanyard/internal"
+	"github.com/example/lanyard/internal/grantstore"
 	"github.com/example/lanyard/internal/policy"
-	"github.com/example/lanyard/internal/registry"
 )
 
 // Service turns a valid request into a task-scoped grant with policy evaluation.
 type Service struct {
-	registry     *registry.Registry
+	store        GrantStore
 	policyEngine policy.Engine
 	parentGrants map[string][]ScopeEntry
 }
 
-func NewService(r *registry.Registry, engine policy.Engine) *Service {
+// GrantStore is the interface GrantService needs from a grant store.
+// grantstore.Store implements this; mockStore is used by unit tests.
+type GrantStore interface {
+	ValidateAgent(ctx context.Context, id string) error
+	GetAgent(ctx context.Context, id string) (grantstore.Agent, bool)
+	TenantForAgent(ctx context.Context, id string) (string, error)
+	RegisterAgent(ctx context.Context, agent grantstore.Agent) error
+	CreateTenant(ctx context.Context, id, name string) error
+	RegisterConnector(ctx context.Context, connector grantstore.Connector) error
+}
+
+func NewService(store GrantStore, engine policy.Engine) *Service {
 	return &Service{
-		registry:     r,
+		store:        store,
 		policyEngine: engine,
 		parentGrants: map[string][]ScopeEntry{},
 	}
+}
+
+func (s *Service) AgentPublicKey(ctx context.Context, id string) (string, error) {
+	if err := s.store.ValidateAgent(ctx, id); err != nil {
+		return "", err
+	}
+	agent, ok := s.store.GetAgent(ctx, id)
+	if !ok {
+		return "", fmt.Errorf("unknown agent %s", id)
+	}
+	return agent.PublicKey, nil
 }
 
 func (s *Service) RegisterParentGrant(grantID string, scope []ScopeEntry) {
@@ -33,11 +55,11 @@ func (s *Service) Issue(ctx context.Context, req Request) (Claims, error) {
 	if err := req.Validate(); err != nil {
 		return Claims{}, err
 	}
-	if err := s.registry.ValidateAgent(req.Actor); err != nil {
+	if err := s.store.ValidateAgent(ctx, req.Actor); err != nil {
 		return Claims{}, err
 	}
 
-	agent, ok := s.registry.GetAgent(req.Actor)
+	agent, ok := s.store.GetAgent(ctx, req.Actor)
 	if !ok {
 		return Claims{}, fmt.Errorf("unknown agent %s", req.Actor)
 	}
@@ -46,7 +68,7 @@ func (s *Service) Issue(ctx context.Context, req Request) (Claims, error) {
 		return Claims{}, fmt.Errorf("agent %s has an invalid public key: %w", req.Actor, err)
 	}
 
-	tenantID, err := s.registry.TenantForAgent(req.Actor)
+	tenantID, err := s.store.TenantForAgent(ctx, req.Actor)
 	if err != nil {
 		return Claims{}, err
 	}
