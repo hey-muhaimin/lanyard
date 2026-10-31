@@ -8,7 +8,13 @@ RUN mkdir -p /out && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/proxy ./cmd/proxy && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
-FROM node:22-alpine AS ops_console
+
+FROM node:22-alpine AS console_build
+WORKDIR /wconsole
+COPY web/console/package.json web/console/package-lock.json ./
+RUN npm ci
+COPY web/console/ ./
+RUN npm run build:static
 WORKDIR /wops
 COPY web/ops/package.json web/ops/package-lock.json ./
 RUN npm ci
@@ -21,6 +27,6 @@ COPY --from=build /out/controlplane /app/controlplane
 COPY --from=build /out/proxy /app/proxy
 COPY --from=build /out/migrate /app/migrate
 COPY web /app/web
-COPY --from=ops_console /wops/out /app/web/ops
+COPY --from=console_build /wconsole/out /app/web/console
 EXPOSE 8080 8081
 CMD ["/app/controlplane"]

@@ -1,11 +1,20 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import { Toaster } from "@/components/ui/sonner";
 import { SessionProvider } from "@/lib/session";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-plex-mono", display: "swap" });
+const inter = localFont({
+  src: "../public/fonts/Inter-Variable.woff2",
+  variable: "--font-inter",
+  display: "swap",
+});
+const plexMono = localFont({
+  src: "../public/fonts/IBMPlexMono-Variable.woff2",
+  weight: "400 500",
+  variable: "--font-plex-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: { default: "Lanyard Ops", template: "%s · Lanyard Ops" },

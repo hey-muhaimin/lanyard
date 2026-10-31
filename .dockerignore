@@ -13,6 +13,8 @@ deploy
 *.pem
 *.key
 *.crt
-web/ops/node_modules
+web/console/node_modules
+web/console/.next
+web/console/out
 web/ops/.next
 web/ops/out

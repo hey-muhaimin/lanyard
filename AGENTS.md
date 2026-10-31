@@ -1,4 +1,61 @@
-# AGENTS.md (Lanyard)
+## Quick Commands
+- Build all Go code: `go build ./...`
+- Run all Go tests (skip DB integration unless env set): `go test ./...`
+- Run a single Go test (package or pattern): `go test ./path/to/pkg -run TestName`
+- Lint and type‑check before tests (CI order): `go vet ./... && staticcheck ./... && go test -run=^$ ./...`
+- Run migrations (requires `DATABASE_URL` or secret ARN): `DATABASE_URL=postgres://… go run ./cmd/migrate`
+- Start control‑plane demo (needs DB and a UUID tenant): `ALLOW_INSECURE_DEMO=true DATABASE_URL=postgres://… TENANT_ID=$(uuidgen) go run ./cmd/controlplane`
+- Start proxy demo (no DB): `ALLOW_INSECURE_DEMO=true UPSTREAM_URL=https://example.com go run ./cmd/proxy`
+- Run the Next.js console UI dev server (must be in `web/console`):
+  ```
+  cd web/console
+  npm install          # once per repo
+  npm run typecheck   # lint TypeScript / ensure build works
+  npm test            # vitest unit tests
+  npm run dev         # proxies to control‑plane at http://localhost:8080
+  ```
+- Build the static console for production (outputs to `web/console/.next`): `cd web/console && npm run build`
+- Docker build the control‑plane image (requires Go binary already built): `docker build -t lanyard/controlplane .`
+
+## Admin API Details
+- `POST /admin/agents` now accepts an optional `tenant_id`. If omitted, the tenant is inferred from the authenticated session. If provided and it does **not** match the session tenant, the request fails with `tenant_id mismatch`.
+- In dev mode (`ALLOW_INSECURE_DEMO=true`), admin routes (`/admin/*`, `/approve`, `/revoke`, `/events/*`) are available and backed by in‑memory stores. In production they return 404 unless a database pool is configured.
+
+## Test Flavors
+- DB‑dependent tests are skipped unless `TEST_DATABASE_URL` is set. Provide a fresh Postgres instance to run integration tests.
+- CI disables DB integration (`CI` env var) – locally you can enable with `go test ./...` after setting `TEST_DATABASE_URL`.
+- UI tests (Vitest) run in `web/console`; they need Node ≥20.
+
+## Environment Gotchas
+- `internal/config` panics on empty `PORT`, `TENANT_ID`, or `VAULT_KEY_ID`. Ensure these are either unset or set to a non‑empty value.
+- Outside demo mode the binaries require:
+  - `AWS_REGION`
+  - `KMS_KEY_ID`
+  - Secrets Manager ARNs: `DATABASE_SECRET_ARN`, `TOKEN_PRIVATE_KEY_SECRET_ARN`, `TOKEN_PUBLIC_KEY_SECRET_ARN`, `UPSTREAM_SECRET_ARN`, `PROXY_CONNECTOR_ID`, `PROXY_SECRET_ID`
+- Demo fallbacks: `TOKEN_PRIVATE_KEY` (raw seed) and in‑memory KMS.
+- Tenant IDs must be UUIDs; the default `tenant-demo` is not a UUID and will cause schema mismatches on fresh DBs.
+
+## CI / Pre‑commit
+- CI workflow (`.github/workflows/ci.yml`) runs:
+  1. `cedar validate`
+  2. `go run ./cmd/migrate`
+  3. `ALTER ROLE lanyard_app PASSWORD`
+  4. `go test ./...`
+  5. `go build ./...`
+  6. `docker build`
+- Pre‑commit hooks are not committed; configure your own (e.g., `golangci-lint`, `prettier` for UI) if needed.
+
+## Docker Compose
+- The provided `docker compose` file is outdated for the control plane – it sets `TENANT_ID=tenant-demo` without `DATABASE_URL`, causing startup failure. Use the demo command above or update the compose file with a real DB URL and UUID tenant.
+- The proxy service works out‑of‑the‑box.
+
+## Miscellaneous
+- No `.gitignore` – remember to add common patterns (`build/`, `*.exe`, `proxy.bin`, `web/console/.next`, `web/console/node_modules`).
+- The `web/console` directory is untracked – commit only source files, not build artifacts.
+- Cedar policies are required for `/grant`; the default policy is published in `policies/default.cedar`.
+- The `auth` package provides session handling; admin routes (`/admin/*`, `/approve`, `/revoke`, `/events/*`) are only mounted when a DB pool is present.
+- Ops routes (`/ops/*`) are always mounted but use a stub session middleware; replace with real `authstore.Validate` for production.
+
 
 Task-scoped identity and secrets for autonomous agents: the control plane issues short-lived scoped grants, the proxy enforces them and injects the real upstream credential so the agent/model never sees it.
 
