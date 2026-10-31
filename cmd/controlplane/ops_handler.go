@@ -194,7 +194,7 @@ func newOpsHandler(pool *pgxpool.Pool) http.Handler {
     store := authstore.New(pool)
     api := &opsAPI{pool: pool, store: store}
     mux := http.NewServeMux()
-    mux.HandleFunc("/ops/auth/login", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"token": "dummy-token"}) })
+    mux.HandleFunc("/ops/auth/login", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/ops/", http.StatusFound) })
     mux.HandleFunc("/ops/auth/logout", api.authLogout)
     mux.HandleFunc("/ops/health", api.health)
     mux.HandleFunc("/ops/tenants", api.tenants)

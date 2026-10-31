@@ -341,6 +341,11 @@ func newControlPlaneHandler(gs *grant.Service, signer *token.Signer, cfg config.
 	} else {
 		mux.Handle("/auth/", authUnavailableHandler())
 	}
+	// Ops console routes (placeholder implementation). Mount only if enabled.
+	if cfg.OpsSSOEnabled {
+		opsHandler := newOpsHandler(pool)
+		mux.Handle("/ops/", opsHandler)
+	}
 	// Wrap the entire mux with CSP middleware for the static console apps.
 	return cspMiddleware(mux)
 }
