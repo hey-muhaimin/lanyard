@@ -28,6 +28,45 @@ Lanyard is a Go control plane and egress proxy for task-scoped agent grants. The
 - `deploy/`: single-host Compose template and rollout notes; `cdk/`: infrastructure prototype, not approved for production deployment.
 - `sdk/`, `connectors/`, `docs/`: client code, connector specifications, and design records.
 
+## Email login-code delivery (new)
+
+- Enable with `AUTH_CODE_DELIVERY=email`.
+- `AUTH_EMAIL_FROM` (default `no-reply@linkedqueue.cloud`) must be a non‑empty valid email address; the control‑plane validates this at start.
+- Requires `AWS_REGION` (SES region). The mailer is created at startup; if SES init fails a warning is logged and email delivery is disabled.
+- Run mailer‑specific tests: `go test ./internal/mailer`.
+- When `AUTH_CODE_DELIVERY=response` is used, `ALLOW_INSECURE_DEMO` must be true (dev mode only).
+
+## Ops staff SSO (new)
+
+- Enable with `OPS_SSO_ENABLED=true`.
+- Requires `COGNITO_SECRET_ARN` and `OPS_PUBLIC_BASE_URL` (HTTPS unless dev mode). In dev mode (`ALLOW_INSECURE_DEMO=true`) HTTP is allowed.
+- When enabled, `/ops/*` routes are mounted; otherwise they return 404.
+- Registration endpoint is gated by `ALLOW_SIGNUP`.
+
+## IAM / Permissions Boundary (new)
+
+- Apply the SES send‑email policy located at `infra/iam/lanyard-ses-send-policy.json`:
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AllowSendEmail",
+        "Effect": "Allow",
+        "Action": ["ses:SendEmail"],
+        "Resource": "arn:aws:ses:ap-southeast-2:459321894716:identity/linkedqueue.cloud"
+      }
+    ]
+  }
+  ```
+- Update the EC2 role boundary `lanyard-ec2-ssm-runtime-boundary-v1` to include the `AllowSendEmail` statement (see the same file for the snippet). Publish a new version and set it as default:
+  ```
+  aws iam create-policy-version \
+    --policy-arn arn:aws:iam::459321894716:policy/lanyard-ec2-ssm-runtime-boundary-v1 \
+    --policy-document file://infra/iam/lanyard-ec2-ssm-runtime-boundary.json \
+    --set-as-default
+  ```
+- Attach both the identity policy and the updated boundary to the EC2 instance role that runs the control‑plane container.
 <!-- BEGIN AWS Agent Toolkit rules -->
 <!-- BEGIN AWS Agent Toolkit rules -->
 # AWS Guidance for the new AWS experience
