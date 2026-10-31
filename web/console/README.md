@@ -1,4 +1,4 @@
-# Lanyard console
+# Customer Console
 
 Customer console for Lanyard: Next.js (App Router, TypeScript), Tailwind v4 and shadcn/ui.
 Design system: monochrome grayscale, square corners, Inter + IBM Plex Mono, status shown as glyph + word
@@ -8,18 +8,18 @@ The shell follows shadcn's dashboard blocks (collapsible sidebar, header, inset 
 page follows `login-04` (one card, form left, product panel right). They are written by hand on the shadcn
 primitives. To compare with the official blocks, run `npx shadcn@latest add dashboard-02 login-04` in a scratch copy.
 
-## First run
+## Local Development
 
 ```bash
 cd web/console
-npm install
+npm ci
 npm run ui:add          # pulls the shadcn components listed in package.json into src/components/ui
 npm run typecheck && npm test
 cp .env.example .env.local
 npm run dev             # http://localhost:3000, proxies API paths to LANYARD_API_ORIGIN (default :8080)
 ```
 
-Commit `src/components/ui/*` and `src/hooks/use-mobile.ts` after `ui:add` so Docker and CI builds do not need the registry.
+The UI primitives are checked in and the Docker build uses `npm ci`; `ui:add` is only for intentionally adding shadcn components.
 
 ## How it talks to the control plane
 
@@ -38,39 +38,13 @@ every state-changing request carries the browser's own `Origin` header, which th
 
 Roles are mirrored in `src/lib/roles.ts` to decide what to show. The server is the authority.
 
-**Dev proxy and Origin:** `next dev` forwards `/auth`, `/admin` etc. to the control plane, but the browser's
-`Origin` is `http://localhost:3000`. Run the control plane with `PUBLIC_BASE_URL=http://localhost:3000` and make the dev
-branch of `buildAuth` pass it as `AllowedOrigin` (one line), or sign-in POSTs return 403.
+**Dev proxy and Origin:** `next dev` forwards API paths to `LANYARD_API_ORIGIN` (default `http://localhost:8080`). Set the control plane's `PUBLIC_BASE_URL` to `http://localhost:3000` for local browser requests. Login codes are not delivered by an email provider in this repository; the default `AUTH_CODE_DELIVERY=none` does not complete an end-to-end sign-in flow.
 
-## Production build
+## Production Build
 
-`npm run build:static` writes a static site to `out/`. The Go control plane serves it from `/app/web`, so cookies stay same-origin.
-Add a build stage to the Dockerfile and drop `COPY web /app/web`:
+`npm run build:static` writes a static site to `out/`. The runtime Docker image does not include or serve this export. The CDK prototype expects the export in S3, but its distribution does not yet route customer API paths to the control plane, so it is not a complete production hosting path.
 
-```dockerfile
-FROM node:22-alpine AS console
-WORKDIR /w
-COPY web/console/package.json web/console/package-lock.json ./
-RUN npm ci
-COPY web/console/ ./
-RUN npm run build:static
-
-# final stage
-COPY --from=console /w/out /app/web
-```
-
-Add `web/console/node_modules`, `web/console/.next` and `web/console/out` to `.dockerignore`.
-Fonts are fetched at build time by `next/font/google`; switch to `next/font/local` for fully offline builds.
-
-**Content-Security-Policy:** Next's static export emits small inline scripts, so the control plane's current
-`script-src 'self'` blocks the app. Use this until hashes are generated at build time:
-
-```
-default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
-frame-ancestors 'none'; base-uri 'none'; form-action 'self'
-```
-
-The app renders no raw HTML (React escapes text, agent parameters appear inside `<pre>`), which is what makes this acceptable for the alpha.
+The Go API has a CSP middleware, but static hosting headers are configured separately. Verify response security headers against the generated export and hosting layer before deployment; do not weaken the production policy without a reviewed justification.
 
 ## Layout
 
@@ -82,7 +56,6 @@ src/lib                     api client, session, roles (+ test), types
 src/hooks/use-resource.ts   load/reload with loading, error and idle states
 ```
 
-## Not built yet
+## Current Limitations
 
-Connectors, Policies, Audit and Settings pages say what backend piece they wait for. No dark mode. No dedicated Activity filters.
-The internal ops console is a separate app (`web/ops`) and is not scaffolded here.
+Several pages remain placeholders. Production login-code delivery is not implemented, and the current CDK stack does not provide complete same-origin console/API routing. The internal ops console is a separate prototype in `web/ops`.

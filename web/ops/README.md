@@ -1,9 +1,9 @@
-# Lanyard ops console
+# Internal Ops Console Prototype
 
-Internal platform console for Lanyard staff: platform health, tenants, and incident actions that need two people.
-It is a separate app from `web/console` on purpose: separate domain, separate cookie, separate API paths, and a dark
-header so nobody mistakes one for the other. Same stack and design system (Next.js, Tailwind v4, shadcn/ui, monochrome,
-glyph + word statuses).
+Prototype interface for platform staff: platform health, tenants, and incident actions that need two people. It is a
+separate app from `web/console`, but the current CDK prototype places both under one CloudFront distribution; it does
+not provide a separate staff domain or a production security boundary. The app uses Next.js, Tailwind v4, shadcn/ui,
+monochrome styling, and glyph + word statuses.
 
 ## First run
 
@@ -19,9 +19,11 @@ npm run dev               # http://localhost:3001
 In mock mode the app behaves like the rules below: filing a request never runs it, and you cannot decide your own request.
 A fixture request from another engineer is pending, so you can try Approve and Deny.
 
-## API this app expects (not built yet)
+## Backend Status
 
-The control plane has no `/ops/*` routes today. This is the contract to build, on the **admin listener only**:
+This UI uses mock fixtures for local development. Do not connect it to production or rely on it for staff operations. The existing Go handler is a placeholder and is intentionally not mounted: it does not establish a trustworthy staff identity. `/ops/*` returns 404 until a separately reviewed authentication and authorization implementation is available.
+
+The following is a proposed API contract only, not a supported backend:
 
 | Call | Purpose |
 | --- | --- |
@@ -44,11 +46,9 @@ Roles: `ops_admin`, `ops_oncall` (request and decide), `ops_support` (read only)
 - Reasons are required (the form asks for 20+ characters).
 - Serve this app and `/ops/*` only on an internal network or behind an allowlist, never on the public customer listener.
 
-## Production build
+## Build and Deployment
 
-`npm run build:static` writes `out/`. Host it on its own internal domain (for example `ops.internal.example.com`),
-not inside the customer control plane's `/app/web`. Use the same Node build stage as `web/console` and a separate image or bucket.
-Next's inline scripts need `script-src 'self' 'unsafe-inline'` until hashes are generated at build time (see the console README).
+`npm run build:static` writes `out/`. The repository's CDK bucket deployment is a prototype, not an approved production hosting path. Do not publish this UI until staff authentication, authorization, network access, and response security headers have been reviewed. Do not use the former `unsafe-inline` CSP suggestion as production policy.
 
 ## Notes
 
