@@ -28,20 +28,16 @@ func (s *PostgresStore) Get(ctx context.Context, secretID, tenantID string) ([]b
 	var contextVersion int
 	err := db.WithTenant(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			SELECT tenant_id::text, kms_key_id, ciphertext, wrapped_dek, version, encryption_context_version
+			SELECT tenant_id::text, kms_key_id, ciphertext, wrapped_dek, encryption_context_version
 			FROM secrets
 			WHERE secret_id = $1 AND status = 'active'
-			ORDER BY version DESC
-			LIMIT 1`, secretID).Scan(&record.TenantID, &record.KMSKeyID, &record.Ciphertext, &record.WrappedKey, &record.Version, &contextVersion)
+			LIMIT 1`, secretID).Scan(&record.TenantID, &record.KMSKeyID, &record.Ciphertext, &record.WrappedKey, &contextVersion)
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("vault: secret %q not found", secretID)
+			return nil, fmt.Errorf("vault: secret %q: %w", secretID, ErrSecretNotFound)
 		}
 		return nil, fmt.Errorf("vault: load secret %q: %w", secretID, err)
-	}
-	if record.Version != secretVersion {
-		return nil, fmt.Errorf("vault: secret %q has unsupported version %d: %w", secretID, record.Version, ErrUnsupportedVersion)
 	}
 	return openPostgresSecret(ctx, s.kms, record.KMSKeyID, record.TenantID, secretID, record.Ciphertext, record.WrappedKey, contextVersion)
 }

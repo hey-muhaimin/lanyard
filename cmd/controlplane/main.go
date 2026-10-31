@@ -13,6 +13,7 @@ import (
 
 	"github.com/cedar-policy/cedar-go"
 	token "github.com/example/lanyard/internal"
+	"github.com/example/lanyard/internal/authstore"
 	"github.com/example/lanyard/internal/awssecrets"
 	"github.com/example/lanyard/internal/config"
 	"github.com/example/lanyard/internal/grant"
@@ -46,6 +47,11 @@ permit (
 func main() {
 	cfg := config.Load()
 	logger := logging.NewJSONLogger()
+
+	if err := cfg.Validate(); err != nil {
+		logger.Error("invalid controlplane configuration", map[string]any{"error": err.Error()})
+		os.Exit(1)
+	}
 
 	if err := cfg.ValidateProduction(); err != nil {
 		logger.Error("invalid controlplane production configuration", map[string]any{"error": err.Error()})
@@ -310,21 +316,36 @@ func newControlPlaneHandler(gs *grant.Service, signer *token.Signer, cfg config.
 
 		writeJSON(w, http.StatusOK, map[string]any{"access_token": jwt, "token_type": "Bearer", "expires_in": req.TTLSeconds})
 	})
-	if cfg.DevMode {
+	if pool != nil {
+		// Session-authenticated, database-backed admin API used by the console.
+		consoleAdmin := newConsoleAdminHandler(authstore.New(pool), newConsoleStore(pool), cfg, newAuthLogger())
+		mux.Handle("/admin/", consoleAdmin)
+		mux.Handle("/approve", consoleAdmin)
+		mux.Handle("/revoke", consoleAdmin)
+		mux.Handle("/events/", consoleAdmin)
+		// Ops console routes (session‑auth, same store).
+		opsHandler := newOpsHandler(authstore.New(pool))
+		mux.Handle("/ops/", opsHandler)
+	} else if cfg.DevMode {
 		mux.Handle("/admin/", api.handler())
 		mux.Handle("/approve", api.handler())
 		mux.Handle("/revoke", api.handler())
 		mux.Handle("/events/", api.handler())
 	} else {
-		mux.HandleFunc("/admin/", http.NotFound)
+*** End Patch		mux.HandleFunc("/admin/", http.NotFound)
 		mux.HandleFunc("/approve", http.NotFound)
 		mux.HandleFunc("/revoke", http.NotFound)
 		mux.HandleFunc("/events/", http.NotFound)
 	}
-	if webFileServer := http.FileServer(http.Dir("web")); webFileServer != nil {
-		mux.Handle("/", webFileServer)
+	// Customer console session auth is available in demo and production; it
+	// needs the database-backed SECURITY DEFINER functions.
+	if pool != nil {
+		mux.Handle("/auth/", newAuthHandler(authstore.New(pool), cfg, newAuthLogger()))
+	} else {
+		mux.Handle("/auth/", authUnavailableHandler())
 	}
-	return mux
+	// Wrap the entire mux with CSP middleware for the static console apps.
+	return cspMiddleware(mux)
 }
 
 func dpopTargetURL(r *http.Request, devMode bool) string {

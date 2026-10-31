@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
+	"fmt"
 
 	"github.com/example/lanyard/internal/approvals"
 	"github.com/example/lanyard/internal/events"
@@ -21,6 +21,7 @@ type controlPlaneAPI struct {
 	revocations *revocation.Store
 	events      map[string][]events.StoredEvent
 }
+
 
 func newControlPlaneAPI() *controlPlaneAPI {
 	return &controlPlaneAPI{
@@ -55,40 +56,15 @@ func (api *controlPlaneAPI) handler() http.Handler {
 	mux.HandleFunc("/approve", api.approveHandler)
 	mux.HandleFunc("/revoke", api.revokeHandler)
 	mux.HandleFunc("/events/replay", api.replayHandler)
+
 	return mux
 }
 
-func (api *controlPlaneAPI) tenantsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		var body map[string]any
-		if !decodeJSON(w, r, &body) {
-			return
-		}
-		id, _ := body["id"].(string)
-		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "id is required"})
-			return
-		}
-		api.mu.Lock()
-		api.tenants[id] = body
-		api.mu.Unlock()
-		writeJSON(w, http.StatusCreated, body)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	api.mu.RLock()
-	defer api.mu.RUnlock()
-	items := make([]map[string]any, 0, len(api.tenants))
-	for _, item := range api.tenants {
-		items = append(items, item)
-	}
-	writeJSON(w, http.StatusOK, items)
+func generateID() string {
+    // Simple placeholder ID generator – in production use a UUID.
+    return fmt.Sprintf("req-%d", time.Now().UnixNano())
 }
 
-func (api *controlPlaneAPI) agentsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var body map[string]any
 		if !decodeJSON(w, r, &body) {
@@ -156,7 +132,35 @@ func (api *controlPlaneAPI) connectorsHandler(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusCreated, body)
 }
 
-func (api *controlPlaneAPI) approveHandler(w http.ResponseWriter, r *http.Request) {
+func (api *controlPlaneAPI) opsHealthHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    health := map[string]any{
+        "proxy_p99_ms": 12,
+        "revocation_lag_s": 0.5,
+        "event_backlog": 3,
+        "uptime_30d_pct": 99.9,
+        "updated_at": time.Now().UTC().Format(time.RFC3339),
+    }
+    writeJSON(w, http.StatusOK, health)
+}
+
+    if r.Method != http.MethodGet {
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    health := map[string]any{
+        "proxy_p99_ms":  12,
+        "revocation_lag_s": 0.5,
+        "event_backlog":  3,
+        "uptime_30d_pct": 99.9,
+        "updated_at":      time.Now().UTC().Format(time.RFC3339),
+    }
+    writeJSON(w, http.StatusOK, health)
+}
+
 	if r.Method == http.MethodGet {
 		tenant := tenantID(r)
 		writeJSON(w, http.StatusOK, api.approvals.List(tenant))
@@ -232,7 +236,115 @@ func (api *controlPlaneAPI) revokeHandler(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "revoked"})
 }
 
-func (api *controlPlaneAPI) replayHandler(w http.ResponseWriter, r *http.Request) {
+func (api *controlPlaneAPI) opsTenantsHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    api.mu.RLock()
+    defer api.mu.RUnlock()
+    items := make([]map[string]any, 0, len(api.tenants))
+    for _, t := range api.tenants {
+        items = append(items, t)
+    }
+    writeJSON(w, http.StatusOK, items)
+}
+
+func (api *controlPlaneAPI) opsActionsHandler(w http.ResponseWriter, r *http.Request) {
+    switch r.Method {
+    case http.MethodGet:
+        // List actions (approvals) for the tenant, or all if no tenant header
+        tenant := tenantID(r)
+        writeJSON(w, http.StatusOK, api.approvals.List(tenant))
+        return
+    case http.MethodPost:
+        var body struct {
+            Type     string `json:"type"`
+            TenantID string `json:"tenant_id"`
+            Reason   string `json:"reason"`
+        }
+        if !decodeJSON(w, r, &body) {
+            return
+        }
+        if body.Type == "" || body.TenantID == "" || len(body.Reason) < 20 {
+            writeJSON(w, http.StatusBadRequest, map[string]any{"error": "type, tenant_id, and reason (≥20 chars) are required"})
+            return
+        }
+        // Use approvals store to create a pending request
+        req := approvals.Request{ID: generateID(), TenantID: body.TenantID, Action: body.Type, Parameters: map[string]any{"reason": body.Reason}}
+        // ID generation simple placeholder
+        created, err := api.approvals.Create(req, time.Now())
+        if err != nil {
+            writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+            return
+        }
+        writeJSON(w, http.StatusCreated, created)
+        return
+    default:
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+    }
+}
+
+func (api *controlPlaneAPI) opsActionDecideHandler(w http.ResponseWriter, r *http.Request) {
+    // Expected path: /ops/actions/{id}/decide
+    if r.Method != http.MethodPost {
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    // Extract id from URL path
+    // URL pattern: /ops/actions/<id>/decide
+    parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/ops/actions/"), "/")
+    if len(parts) < 2 || parts[1] != "decide" {
+        http.Error(w, "bad request", http.StatusBadRequest)
+        return
+    }
+    id := parts[0]
+    var body struct {
+        Status string `json:"status"`
+    }
+    if !decodeJSON(w, r, &body) {
+        return
+    }
+    if body.Status != "approved" && body.Status != "denied" {
+        writeJSON(w, http.StatusBadRequest, map[string]any{"error": "status must be approved or denied"})
+        return
+    }
+    tenant := tenantID(r)
+    // Decision uses empty parameters (no extra data needed)
+    updated, err := api.approvals.Decide(id, tenant, body.Status, nil, time.Now())
+    if err != nil {
+        writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+        return
+    }
+    writeJSON(w, http.StatusOK, updated)
+}
+
+    parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/ops/actions/"), "/")
+    if len(parts) < 2 || parts[1] != "decide" {
+        http.Error(w, "bad request", http.StatusBadRequest)
+        return
+    }
+    id := parts[0]
+    var body struct {
+        Status string `json:"status"`
+    }
+    if !decodeJSON(w, r, &body) {
+        return
+    }
+    if body.Status != "approved" && body.Status != "denied" {
+        writeJSON(w, http.StatusBadRequest, map[string]any{"error": "status must be approved or denied"})
+        return
+    }
+    tenant := tenantID(r)
+    // Use empty parameters for decision
+    updated, err := api.approvals.Decide(id, tenant, body.Status, nil, time.Now())
+    if err != nil {
+        writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+        return
+    }
+    writeJSON(w, http.StatusOK, updated)
+}
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

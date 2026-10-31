@@ -14,6 +14,12 @@ import (
 func newAdminHandler(api *controlPlaneAPI, sessions *auth.Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/admin/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Origin check: admin routes must come from the same origin as the control plane.
+		origin := r.Header.Get("Origin")
+		if origin != "" && origin != r.Host {
+			writeJSON(w, http.StatusForbidden, map[string]any{"error": "origin not allowed"})
+			return
+		}
 		sessID := auth.SessionFromRequest(r)
 		if sessID == "" {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})
@@ -28,7 +34,7 @@ func newAdminHandler(api *controlPlaneAPI, sessions *auth.Store) http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthenticated"})
 			return
 		}
-		if !auth.HasRole(sess, "admin") && !auth.HasRole(sess, "tenant-admin") {
+		if !auth.HasRole(sess, "admin") && !auth.HasRole(sess, "tenant-admin") && !auth.HasRole(sess, "ops_admin") && !auth.HasRole(sess, "ops_oncall") && !auth.HasRole(sess, "ops_support") {
 			writeJSON(w, http.StatusForbidden, map[string]any{"error": "insufficient role"})
 			return
 		}

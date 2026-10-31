@@ -1,3 +1,5 @@
+UPDATE agents SET slug = id::text WHERE slug IS NULL OR slug = '';
+
 ALTER TABLE secrets ADD COLUMN IF NOT EXISTS secret_id TEXT;
 ALTER TABLE secrets ADD COLUMN IF NOT EXISTS encryption_context_version SMALLINT NOT NULL DEFAULT 1;
 

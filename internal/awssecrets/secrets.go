@@ -58,13 +58,14 @@ func (r *Reader) PostgresURL(ctx context.Context, secretARN string) (string, err
 		return "", err
 	}
 	var credentials struct {
-		Engine   string `json:"engine"`
-		Host     string `json:"host"`
-		Port     int    `json:"port"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Database string `json:"dbname"`
-	}
+			Engine   string `json:"engine"`
+			Host     string `json:"host"`
+			Port     int    `json:"port"`
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Database string `json:"dbname"`
+			SslMode  string `json:"sslmode"`
+		}
 	if err := json.Unmarshal([]byte(raw), &credentials); err != nil {
 		return "", fmt.Errorf("decode PostgreSQL secret: %w", err)
 	}
@@ -87,7 +88,10 @@ func (r *Reader) PostgresURL(ctx context.Context, secretARN string) (string, err
 		Path:   "/" + credentials.Database,
 	}
 	query := connectionURL.Query()
-	query.Set("sslmode", "verify-full")
+		query.Set("sslmode", credentials.SslMode)
+		if query.Get("sslmode") == "" {
+			query.Set("sslmode", "verify-full")
+		}
 	connectionURL.RawQuery = query.Encode()
 	return connectionURL.String(), nil
 }

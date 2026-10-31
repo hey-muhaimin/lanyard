@@ -267,3 +267,43 @@ func TestThumbprintFromBase64AndScopeBoundary(t *testing.T) {
 		t.Fatal("PublicKeyThumbprintFromBase64() returned an empty thumbprint")
 	}
 }
+
+func TestPublicKeyThumbprintFromBase64AcceptsAllEncodings(t *testing.T) {
+	publicKey, _ := testKeyPair(t, 10)
+	want, err := PublicKeyThumbprint(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name    string
+		encoded string
+	}{
+		{name: "base64url", encoded: base64.RawURLEncoding.EncodeToString(publicKey)},
+		{name: "padded base64url", encoded: base64.URLEncoding.EncodeToString(publicKey)},
+		{name: "raw standard", encoded: base64.RawStdEncoding.EncodeToString(publicKey)},
+		{name: "padded standard", encoded: base64.StdEncoding.EncodeToString(publicKey)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := PublicKeyThumbprintFromBase64(test.encoded)
+			if err != nil {
+				t.Fatalf("PublicKeyThumbprintFromBase64() error = %v", err)
+			}
+			if got != want {
+				t.Fatalf("PublicKeyThumbprintFromBase64() = %q, want %q", got, want)
+			}
+		})
+	}
+
+	for name, encoded := range map[string]string{
+		"wrong length": base64.RawURLEncoding.EncodeToString(publicKey[:16]),
+		"malformed":    "not*valid*base64",
+		"empty":        "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := PublicKeyThumbprintFromBase64(encoded); err == nil {
+				t.Fatal("PublicKeyThumbprintFromBase64() accepted invalid key material")
+			}
+		})
+	}
+}

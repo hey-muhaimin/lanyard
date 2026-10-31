@@ -54,7 +54,7 @@ func (s *Store) GetAgent(ctx context.Context, id string) (Agent, bool) {
 	var agent Agent
 	err := db.WithTenant(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			SELECT tenant_id, name, owner_subject, public_key, status
+			SELECT tenant_id, name, owner_subject, encode(public_key, 'base64'), status
 			FROM agents WHERE slug = $1
 		`, id).Scan(&agent.TenantID, &agent.Name, &agent.OwnerSubject, &agent.PublicKey, &agent.Status)
 	})

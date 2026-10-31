@@ -123,6 +123,13 @@ func TestLegacySchemaUpgradePreservesData(t *testing.T) {
 	if countAgents != 1 {
 		t.Fatalf("agent lost: %d", countAgents)
 	}
+	var agentSlug string
+	if err := admin.QueryRow(ctx, "SELECT slug FROM agents WHERE id = $1::uuid", agentID).Scan(&agentSlug); err != nil {
+		t.Fatal(err)
+	}
+	if agentSlug != agentID {
+		t.Fatalf("legacy agent slug = %q, want stable id %q", agentSlug, agentID)
+	}
 	if err := admin.QueryRow(ctx, "SELECT count(*) FROM grants WHERE id = $1::uuid AND tenant_id = $2::uuid AND agent_id = $3::uuid", grantID, tenantID, agentID).Scan(&countGrants); err != nil {
 		t.Fatal(err)
 	}

@@ -13,7 +13,14 @@ DO $$ BEGIN
     CREATE ROLE lanyard_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
   END IF;
 END $$;
-ALTER ROLE lanyard_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
+-- Re-assert the attributes for pre-existing roles. Setting BYPASSRLS requires a
+-- superuser, and managed Postgres (RDS/Aurora) only grants rds_superuser, so this
+-- is skipped there; the CREATE above already applies the same attributes.
+DO $$ BEGIN
+  IF (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+    EXECUTE 'ALTER ROLE lanyard_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT';
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION current_tenant() RETURNS uuid
 LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('app.tenant_id', true), '')::uuid $$;

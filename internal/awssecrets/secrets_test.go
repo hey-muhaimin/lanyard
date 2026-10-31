@@ -65,3 +65,15 @@ func TestPostgresURLUsesTLSAndEscapesCredentials(t *testing.T) {
 		t.Fatalf("PostgresURL() = %q, want escaped credentials and TLS verification", url)
 	}
 }
+
+func TestPostgresURLOptionalSslMode(t *testing.T) {
+	client := &fakeClient{output: &secretsmanager.GetSecretValueOutput{SecretString: aws.String(`{"engine":"postgres","host":"localhost","port":5432,"username":"lanyard","password":"secret","dbname":"lanyard","sslmode":"require"}`)}}
+	reader := NewWithClient(client)
+	url, err := reader.PostgresURL(context.Background(), "arn:example")
+	if err != nil {
+		t.Fatalf("PostgresURL() error = %v", err)
+	}
+	if !strings.Contains(url, "sslmode=require") {
+		t.Fatalf("PostgresURL() = %q, want sslmode=require", url)
+	}
+}

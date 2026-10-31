@@ -268,12 +268,22 @@ func PublicKeyThumbprint(publicKey ed25519.PublicKey) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
 }
 
+// PublicKeyThumbprintFromBase64 accepts base64url (padded or unpadded) and
+// standard base64 (padded or unpadded) agent public keys.
 func PublicKeyThumbprintFromBase64(encoded string) (string, error) {
-	key, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil {
-		return "", fmt.Errorf("decode agent public key: %w", err)
+	for _, encoding := range []*base64.Encoding{
+		base64.RawURLEncoding,
+		base64.URLEncoding,
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+	} {
+		key, err := encoding.DecodeString(encoded)
+		if err != nil || len(key) != ed25519.PublicKeySize {
+			continue
+		}
+		return PublicKeyThumbprint(ed25519.PublicKey(key))
 	}
-	return PublicKeyThumbprint(ed25519.PublicKey(key))
+	return "", errors.New("decode agent public key: must be a 32-byte base64 value")
 }
 
 // DecodeEd25519PrivateKey accepts base64url (unpadded) key material of either

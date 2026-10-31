@@ -1,38 +1,39 @@
 # AGENTS.md (Lanyard)
 
-## Stack
-- Go module: `github.com/example/lanyard` (go 1.27)
-- Binaries: `cmd/controlplane` (:8080), `cmd/proxy` (:8081), `cmd/migrate`
-- Local deps: Postgres 16 (RLS), NATS 2.10 JetStream via `docker-compose.yml`
-- Container: multi-stage `golang:1.27` → `gcr.io/distroless/base-debian12:nonroot`, both bins, non-root
+Task-scoped identity and secrets for autonomous agents: the control plane issues short-lived scoped grants, the proxy enforces them and injects the real upstream credential so the agent/model never sees it.
 
-## Key files
-- `cmd/controlplane/main.go`: `/healthz`, `/readyz` (503 until wired), `POST /grant` (currently 501/accepted placeholder)
-- `cmd/proxy/main.go`: needs `ALLOW_INSECURE_DEMO=true` + in-memory demo secret; requires `UPSTREAM_URL` (fixed HTTPS, no query/fragment), `TOKEN_KEY_ID/ISSUER/AUDIENCE/PUBLIC_KEY`; enforces DPoP + bearer grant + scopes; refuses non-public DNS/redirects, strips creds, caps response size
-- `internal/config`: env-driven; **panics** if `PORT`, `TENANT_ID`, or `VAULT_KEY_ID` are empty strings (even if set). Defaults: `0.0.0.0:8080`, `tenant-demo`, `local-dev-key`
-- `internal/token.go`: Ed25519 JWTs + JWKS + DPoP with process-local replay cache (needs shared store for multi-replica)
-- `internal/vault`: AES-GCM envelope encryption; `Seal` binds tenant as AAD (`[]byte(tenantID)`) — tamper/wrong tenant fails; `MemoryKMS` is dev-only (wraps DEK as-is). Store: `Put` + `UseOnce` (no plaintext fetch)
-- `internal/grant`: enforces parent attenuation (`validateAttenuation` resource prefix + `MaxRows <= parent`), calls policy engine, binds claims to agent key thumbprint
-- `internal/policy/SimpleEngine`: denies missing identity/action, denies admin resources for non-`agent:` actors, denies `MaxRows>1000`, treats `pending` approval as `approve` with reason
-- `migrations/001_init.sql` immutable baseline; `002_tenant_isolation.sql` adds hardening — run via migrator. DB has RLS on `grants`; app must set `app.tenant_id` per transaction
+## Stack and layout
+- Go module `github.com/example/lanyard`, go 1.27. Deps: pgx v5, cedar-go, nats.go (invalidator only), AWS SDK v2 (KMS + Secrets Manager).
+- Binaries: `cmd/controlplane` (:8080), `cmd/proxy` (:8081), `cmd/migrate`. Image: `golang:1.27` → distroless non-root, all three bins plus `web/` at `/app/web`.
+- `web/` is a vanilla ops UI served by the control plane from the relative path `./web` (run from repo root or it 404s). `web/console/` is a Next.js 16 customer console — untracked, not built or served by anything yet.
+- `migrations/*.sql` are embedded via `migrations/embed.go`; `policies/` holds the Cedar schema + example bundle; `sdk/python`, `sdk/ts`; `infra/terraform` only has variables/versions (no resources); `deploy/` has production compose + rollout doc.
 
 ## Commands
-- Build: `go build ./...`
-- Test: `go test ./...` (DB isolation tests need `TEST_DATABASE_URL` + `TEST_ADMIN_DATABASE_URL`)
-- Migrate: `DATABASE_URL=... go run ./cmd/migrate` (or `/app/migrate` in image). Migration role needs perms to create/alter `lanyard_app`
-- Run locally:
-  - Control plane: `PORT=8080 TENANT_ID=tenant-demo go run ./cmd/controlplane`
-  - Proxy (demo): `PORT=8081 TENANT_ID=tenant-demo VAULT_KEY_ID=local-dev-key ALLOW_INSECURE_DEMO=true UPSTREAM_URL=https://example.com go run ./cmd/proxy`
-- Docker: `docker compose up --build` (proxy runs in unsafe local-demo mode per compose)
+- Build `go build ./...`; test `go test ./...` (passes with no services; DB integration tests skip unless `TEST_DATABASE_URL` / `TEST_ADMIN_DATABASE_URL` are set, and **fail** when `CI` is set).
+- CI order (`.github/workflows/ci.yml`): `cedar validate` → `go run ./cmd/migrate` → `ALTER ROLE lanyard_app PASSWORD` → `go test ./...` → `go build ./...` → `docker build`.
+- Cedar check: `cedar validate --schema policies/schema.cedarschema.json --schema-format json --policies policies/default.cedar --policy-format cedar` (cedar-policy-cli v4.14).
+- Console: `cd web/console && npm run typecheck && npm test` (vitest); `npm run dev` proxies `/auth`, `/admin`, `/approve`, `/revoke`, `/events` to `LANYARD_API_ORIGIN` (default `http://localhost:8080`).
+- Migrate: `DATABASE_URL=postgres://... go run ./cmd/migrate`, or `DATABASE_SECRET_ARN` + `AWS_REGION`. Admin role needs rights to create/alter `lanyard_app`.
+- Control plane demo run **needs a database**: `ALLOW_INSECURE_DEMO=true DATABASE_URL=... TENANT_ID=<uuid> go run ./cmd/controlplane`.
+- Proxy demo run is self-contained (in-memory vault, secret `demo-secret`): `ALLOW_INSECURE_DEMO=true UPSTREAM_URL=https://example.com go run ./cmd/proxy`.
+- `docker compose up --build` is stale for the control plane: that service sets `TENANT_ID=tenant-demo` and no `DATABASE_URL`, so it exits at startup. The proxy service works.
+
+## Migrations
+- Applied migrations are checksummed in `schema_migrations`. **Never edit a migration that has run anywhere** — add the next zero-padded, contiguous file (`005_...sql`) instead, or `migrate` aborts with "checksum differs". `004_secret_lookup.sql` already carries an uncommitted slug backfill: if 004 ran on a local DB, reset the DB rather than editing it further.
+- Every tenant table needs `ENABLE ROW LEVEL SECURITY` + a `tenant_isolation` policy using `current_tenant()` **and** explicit `GRANT`s to `lanyard_app` (see 002/003). `lanyard_app` is `NOBYPASSRLS`; `sessions`/`login_codes` are reachable only through `SECURITY DEFINER` functions.
 
 ## Gotchas
-- **Config**: empty string env vars cause panic even if "set" — use non-empty values
-- **Proxy**: exits without `ALLOW_INSECURE_DEMO=true`; hardcoded demo secret only in that mode; not for prod
-- **Vault**: tenant is AAD — cross-tenant/tamper = decrypt failure
-- **Secrets**: always use `logging.Redact` (never log bodies/headers/secrets)
-- **RLS**: set `app.tenant_id` per transaction when querying `grants`
-- **Attenuation**: enforced in `grant.Service` for parent grants
-- **Prod gaps**: no real KMS/persistent grant store/authenticated issuance/revocation/durable audit/multi-replica replay store
+- `internal/config` panics when `PORT`, `TENANT_ID`, or `VAULT_KEY_ID` are set to empty strings (empty ≠ unset). Defaults: `0.0.0.0:8080`, `tenant-demo`, `local-dev-key`.
+- Tenant IDs must be UUIDs (RLS casts `current_setting('app.tenant_id')::uuid`). The `tenant-demo` default is not a UUID, and the demo seed inserts agent id `agent:demo` into `agents.id UUID` / `public_key BYTEA`, so demo startup against a migrated DB fails — use a real UUID tenant and treat the demo seed as out of sync with the schema.
+- All DB access must be tenant-scoped: wrap queries in `db.WithTenant` (sets `app.tenant_id` per transaction); grantstore additionally reads the tenant from context (`grantstore.WithTenant` / `TenantKey{}`).
+- Outside demo mode (`ALLOW_INSECURE_DEMO` != `"true"`) the binaries require `AWS_REGION` + `KMS_KEY_ID` and Secrets Manager ARNs: `DATABASE_SECRET_ARN`, `TOKEN_PRIVATE_KEY_SECRET_ARN`, `TOKEN_PUBLIC_KEY_SECRET_ARN` (proxy), `UPSTREAM_SECRET_ARN`, `PROXY_CONNECTOR_ID`, `PROXY_SECRET_ID`. Demo fallbacks: `TOKEN_PRIVATE_KEY` or a hardcoded well-known seed, `vault.MemoryKMS`.
+- `POST /grant` is real now: DPoP proof verified against the agent's registered key, Cedar decision, Ed25519 JWT. `/admin/*`, `/approve`, `/revoke`, `/events/*` are mounted **only** in demo mode (404 otherwise) and back onto in-memory stores.
+- `/auth/request|verify|me|logout` do not exist in Go yet even though `web/console` calls them; `cmd/controlplane/admin_server.go` (session/role admin handler) exists but is never wired in `main.go`.
+- Proxy: `UPSTREAM_URL` must be HTTPS with no credentials/query/fragment; DNS is re-resolved and must be public unicast; redirects are not followed; responses capped at 1 MiB; secret scrubbed with `logging.Redact`. Never log bodies, headers, or secrets.
+- Vault: tenant is the AES-GCM AAD, so cross-tenant/tampered ciphertext fails to decrypt; the Postgres store keys secrets by `(tenant_id, secret_id, version)` with `encryption_context_version`.
+- Cedar denies when no policy is loaded for the tenant; only the approval subsystem may set `context.approval.status`.
+- Not wired / placeholder: `internal/policy/nats_invalidation.go` and compose's `nats` service, `internal/registry`, `internal/mcp`, `internal/deps`, `infra/terraform`.
+- No `.gitignore` exists: `build/`, `*.exe`, `proxy.bin`, `web/console/.next`, `web/console/node_modules` are untracked — never commit them.
 
 <!-- BEGIN AWS Agent Toolkit rules -->
 # AWS Guidance for the new AWS experience

@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"time"
 )
 
 // Config holds the runtime settings for the Lanyard services.
@@ -21,6 +23,14 @@ type Config struct {
 	ProxyConnectorID         string // env PROXY_CONNECTOR_ID
 	ProxySecretID            string // env PROXY_SECRET_ID
 	DevMode                  bool   // env ALLOW_INSECURE_DEMO == "true"
+
+	// Customer console authentication.
+	PublicBaseURL        string        // env PUBLIC_BASE_URL
+	AuthCodeDelivery     string        // env AUTH_CODE_DELIVERY: none|log|response
+	AuthCodeLogPlaintext bool          // env AUTH_CODE_LOG_PLAINTEXT == "true"
+	AllowSignup          bool          // env ALLOW_SIGNUP == "true"
+	SessionTTL           time.Duration // env SESSION_TTL
+	SessionIdle          time.Duration // env SESSION_IDLE
 
 	tokenKeyID    string // env TOKEN_KEY_ID
 	tokenIssuer   string // env TOKEN_ISSUER
@@ -44,6 +54,13 @@ func Load() Config {
 		ProxyConnectorID:         getEnv("PROXY_CONNECTOR_ID", ""),
 		ProxySecretID:            getEnv("PROXY_SECRET_ID", ""),
 		DevMode:                  os.Getenv("ALLOW_INSECURE_DEMO") == "true",
+
+		PublicBaseURL:        getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
+		AuthCodeDelivery:     getEnv("AUTH_CODE_DELIVERY", "none"),
+		AuthCodeLogPlaintext: os.Getenv("AUTH_CODE_LOG_PLAINTEXT") == "true",
+		AllowSignup:          os.Getenv("ALLOW_SIGNUP") == "true",
+		SessionTTL:           durationEnv("SESSION_TTL", 12*time.Hour),
+		SessionIdle:          durationEnv("SESSION_IDLE", 2*time.Hour),
 
 		tokenKeyID:    getEnv("TOKEN_KEY_ID", "local-dev-key"),
 		tokenIssuer:   getEnv("TOKEN_ISSUER", "lanyard-controlplane"),
@@ -79,6 +96,20 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// durationEnv parses a duration env var, falling back when unset. Invalid or
+// non-positive values panic, matching Load's fail-fast semantics for config.
+func durationEnv(key string, fallback time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		panic(key + " must be a positive duration")
+	}
+	return parsed
+}
+
 func (c Config) Address() string {
 	return fmt.Sprintf("%s:%s", c.Host, c.Port)
 }
@@ -102,6 +133,29 @@ func (c Config) Audience() string {
 func (c Config) ValidateProduction() error {
 	if !c.DevMode && (c.KMSKeyID == "" || c.AWSRegion == "") {
 		return fmt.Errorf("production requires KMS configuration")
+	}
+	return nil
+}
+
+// Validate checks cross-field configuration that Load cannot express with its
+// panic-on-empty semantics. Callers should invoke it at startup and exit on
+// error. AUTH_CODE_DELIVERY=response is rejected outside dev mode because it
+// returns login codes in the HTTP response.
+func (c Config) Validate() error {
+	switch c.AuthCodeDelivery {
+	case "none", "log", "response":
+	default:
+		return fmt.Errorf("AUTH_CODE_DELIVERY must be one of none, log, response")
+	}
+	if c.AuthCodeDelivery == "response" && !c.DevMode {
+		return fmt.Errorf("AUTH_CODE_DELIVERY=response requires ALLOW_INSECURE_DEMO=true")
+	}
+	base, err := url.Parse(c.PublicBaseURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return fmt.Errorf("PUBLIC_BASE_URL must be an absolute URL")
+	}
+	if c.SessionTTL <= 0 || c.SessionIdle <= 0 {
+		return fmt.Errorf("SESSION_TTL and SESSION_IDLE must be positive")
 	}
 	return nil
 }
