@@ -323,9 +323,6 @@ func newControlPlaneHandler(gs *grant.Service, signer *token.Signer, cfg config.
 		mux.Handle("/approve", consoleAdmin)
 		mux.Handle("/revoke", consoleAdmin)
 		mux.Handle("/events/", consoleAdmin)
-		// Ops console routes (session‑auth, same store).
-		opsHandler := newOpsHandler(pool)
-		mux.Handle("/ops/", opsHandler)
 	} else if cfg.DevMode {
 		mux.Handle("/admin/", api.handler())
 		mux.Handle("/approve", api.handler())

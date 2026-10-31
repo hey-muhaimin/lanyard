@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -26,9 +27,13 @@ type Config struct {
 
 	// Customer console authentication.
 	PublicBaseURL        string        // env PUBLIC_BASE_URL
-	AuthCodeDelivery     string        // env AUTH_CODE_DELIVERY: none|log|response
+	AuthCodeDelivery     string        // env AUTH_CODE_DELIVERY: none|log|response|email
+	AuthEmailFrom        string        // env AUTH_EMAIL_FROM, default no-reply@linkedqueue.cloud
 	AuthCodeLogPlaintext bool          // env AUTH_CODE_LOG_PLAINTEXT == "true"
-	AllowSignup          bool          // env ALLOW_SIGNUP == "true"
+	OpsSSOEnabled    bool   // env OPS_SSO_ENABLED == "true"
+	CognitoSecretARN string // env COGNITO_SECRET_ARN
+	OpsPublicBaseURL string // env OPS_PUBLIC_BASE_URL, e.g. https://ops.linkedqueue.cloud
+	AllowSignup bool // env ALLOW_SIGNUP == "true"
 	SessionTTL           time.Duration // env SESSION_TTL
 	SessionIdle          time.Duration // env SESSION_IDLE
 
@@ -56,7 +61,7 @@ func Load() Config {
 		DevMode:                  os.Getenv("ALLOW_INSECURE_DEMO") == "true",
 
 		PublicBaseURL:        getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
-		AuthCodeDelivery:     getEnv("AUTH_CODE_DELIVERY", "none"),
+		AuthEmailFrom:        getEnv("AUTH_EMAIL_FROM", "no-reply@linkedqueue.cloud"),
 		AuthCodeLogPlaintext: os.Getenv("AUTH_CODE_LOG_PLAINTEXT") == "true",
 		AllowSignup:          os.Getenv("ALLOW_SIGNUP") == "true",
 		SessionTTL:           durationEnv("SESSION_TTL", 12*time.Hour),
@@ -143,19 +148,34 @@ func (c Config) ValidateProduction() error {
 // returns login codes in the HTTP response.
 func (c Config) Validate() error {
 	switch c.AuthCodeDelivery {
-	case "none", "log", "response":
+	case "none", "log", "response", "email":
 	default:
-		return fmt.Errorf("AUTH_CODE_DELIVERY must be one of none, log, response")
+		return fmt.Errorf("AUTH_CODE_DELIVERY must be one of none, log, response, email")
+	}
+	if c.AuthCodeDelivery == "email" && c.AuthEmailFrom == "" {
+		return fmt.Errorf("AUTH_EMAIL_FROM must be set when AUTH_CODE_DELIVERY=email")
 	}
 	if c.AuthCodeDelivery == "response" && !c.DevMode {
 		return fmt.Errorf("AUTH_CODE_DELIVERY=response requires ALLOW_INSECURE_DEMO=true")
 	}
+
 	base, err := url.Parse(c.PublicBaseURL)
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return fmt.Errorf("PUBLIC_BASE_URL must be an absolute URL")
 	}
-	if c.SessionTTL <= 0 || c.SessionIdle <= 0 {
-		return fmt.Errorf("SESSION_TTL and SESSION_IDLE must be positive")
+
+	if c.OpsSSOEnabled {
+		if c.CognitoSecretARN == "" {
+			return fmt.Errorf("OPS_SSO_ENABLED requires COGNITO_SECRET_ARN")
+		}
+		opsURL, err := url.Parse(c.OpsPublicBaseURL)
+		if err != nil || opsURL.Scheme == "" || opsURL.Host == "" {
+			return fmt.Errorf("OPS_PUBLIC_BASE_URL must be an absolute URL when OPS_SSO_ENABLED is true")
+		}
+	if !strings.EqualFold(opsURL.Scheme, "https") && !c.DevMode {
+		return fmt.Errorf("OPS_PUBLIC_BASE_URL must use https outside demo mode")
 	}
+}
 	return nil
 }
+

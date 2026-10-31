@@ -1,0 +1,32 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.crt
+
+# Go build outputs
+*.exe
+/controlplane
+/proxy
+/migrate
+/proxy.bin
+/build/migrate
+/build/proxy
+/build/controlplane.*
+/build/e2e/e2e-linux-arm64
+/build/image/controlplane
+/build/image/migrate
+/build/image/proxy
+
+# JavaScript dependencies and generated Next.js exports
+node_modules/
+.next/
+out/
+
+# Local test and editor output
+coverage/
+.DS_Store
+Thumbs.db

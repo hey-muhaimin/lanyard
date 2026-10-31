@@ -1,4 +1,6 @@
-# Lanyard: 12-Hour Implementation Plan
+# Historical Sprint Plan: 12-Hour Implementation
+
+> This is a dated sprint plan and completion log, not the current release checklist. Some claims and proposed acceptance criteria are superseded by later implementation. See the root [README](README.md) and [implementation status](docs/implementation-plan.md) for current facts.
 
 ## Purpose and constraints
 

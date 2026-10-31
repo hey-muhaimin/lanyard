@@ -15,9 +15,10 @@ The Lanyard system must issue task-scoped identity and credentials for autonomou
 - Tokens: Ed25519-signed JWT-like claims with DPoP-style sender constraints.
 - Event log: append-only, hash-chained audit events stored per tenant.
 - Secrets: envelope encryption using per-secret data keys wrapped by a KMS.
-- Dashboard: TypeScript/React at the admin layer.
-- Infra: Docker Compose, Terraform, and GitHub Actions for build and release automation.
+- Customer console: TypeScript/React static export, deployed separately from the Go API.
+- Internal ops console: separate TypeScript/React prototype; not enabled until staff authentication is real.
+- Infrastructure: Docker Compose for local/manual workflows, an AWS CDK prototype, and GitHub Actions CI. Terraform currently contains variables/version constraints only.
 
 ## Consequences
 
-This stack keeps the core logic in one language while preserving security boundaries across tenant, policy, vault, and audit functions.
+This stack keeps the core logic in one language while preserving security boundaries across tenant, policy, vault, and audit functions. The infrastructure and UI decisions do not imply production readiness: the CDK stack is not approved for deployment, the customer API/static hosting path is incomplete, and the ops console is disabled pending a real staff identity boundary.

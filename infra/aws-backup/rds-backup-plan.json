@@ -1,0 +1,19 @@
+{
+  "BackupPlanName": "lanyard-rds-daily-7d",
+  "Rules": [
+    {
+      "RuleName": "daily-7-day-retention",
+      "TargetBackupVaultName": "lanyard-rds-production",
+      "ScheduleExpression": "cron(0 2 ? * * *)",
+      "StartWindowMinutes": 60,
+      "CompletionWindowMinutes": 360,
+      "Lifecycle": {
+        "DeleteAfterDays": 7
+      },
+      "RecoveryPointTags": {
+        "Project": "lanyard",
+        "Environment": "production"
+      }
+    }
+  ]
+}

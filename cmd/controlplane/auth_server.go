@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/example/lanyard/internal/authstore"
+	"github.com/example/lanyard/internal/mailer"
 	"github.com/example/lanyard/internal/config"
 )
 
@@ -53,6 +54,7 @@ type authHandler struct {
 	logger       *slog.Logger
 	origin       string
 	secureCookie bool
+	mailer        mailer.LoginCodeSender
 	mux          *http.ServeMux
 }
 
@@ -76,6 +78,14 @@ func newAuthHandler(store authStore, cfg config.Config, logger *slog.Logger) htt
 	mux.HandleFunc("POST /auth/logout", h.handleLogout)
 	mux.HandleFunc("POST /auth/register", h.handleRegister)
 	h.mux = mux
+	if cfg.AuthCodeDelivery == "email" {
+		sesSender, err := mailer.NewSES(context.Background(), cfg.AWSRegion, cfg.AuthEmailFrom)
+		if err != nil {
+			logger.Error("failed to create SES mailer", "error", err)
+		} else {
+			h.mailer = sesSender
+		}
+	}
 	return h
 }
 
@@ -144,6 +154,12 @@ func (h *authHandler) issueLoginCode(ctx context.Context, email string, body map
 	case "log":
 		if h.cfg.AuthCodeLogPlaintext {
 			h.logger.Info("login code issued", "email", email, "code", code)
+		}
+	case "email":
+		if h.mailer != nil {
+			if err := h.mailer.SendLoginCode(ctx, email, code); err != nil {
+				h.logger.Error("send login code email", "error", err)
+			}
 		}
 	}
 }

@@ -121,7 +121,7 @@ func TestControlPlaneRequiresAgentProofForGrant(t *testing.T) {
 
 func TestProductionHandlerDoesNotExposeInMemoryAdminRoutes(t *testing.T) {
 	handler, _ := newTestHandlerWithMode(t, false)
-	for _, path := range []string{"/admin/tenants", "/approve", "/revoke", "/events/replay"} {
+	for _, path := range []string{"/admin/tenants", "/approve", "/revoke", "/events/replay", "/ops/auth/login"} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"id":"tenant-1"}`)))
 		if recorder.Code != http.StatusNotFound {

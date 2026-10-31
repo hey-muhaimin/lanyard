@@ -1,4 +1,6 @@
-# Console + ops delivery spec (v1)
+# Historical Console + Ops Delivery Spec (v1)
+
+> Planning document only. Several routes, fields, and deployment behaviors below are not implemented or have changed. The ops backend is intentionally disabled. Use the root [README](../README.md) and current source as the authority.
 
 ## Goal
 Ship the customer console (`web/console`) and staff ops console (`web/ops`) with a real Go backend, then deploy both to the production host.

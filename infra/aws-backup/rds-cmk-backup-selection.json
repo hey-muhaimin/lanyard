@@ -1,0 +1,7 @@
+{
+  "SelectionName": "lanyard-rds-cmk",
+  "IamRoleArn": "arn:aws:iam::459321894716:role/service-role/AWSBackupDefaultServiceRole",
+  "Resources": [
+    "arn:aws:rds:ap-southeast-2:459321894716:db:lanyard-rds-cmk"
+  ]
+}

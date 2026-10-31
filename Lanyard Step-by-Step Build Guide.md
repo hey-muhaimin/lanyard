@@ -2,6 +2,8 @@
 
 *Companion to the Lanyard thesis paper. From empty repo to a deployable v1.*
 
+> This is an aspirational design/build guide, not a description of the current code. Verify examples and proposed components against the implementation before using them. Current architecture and release blockers are recorded in the root [README](README.md).
+
 ## 0. How to Use This Guide
 
 Yes, the next step is code. This guide walks through the build in the order that keeps something runnable at every stage. Each step has a goal, the work, a snippet where it helps, and a **done when** check. Snippets are Go and SQL and are meant as working starting points: pin dependency versions and check library APIs against their current docs before you rely on them.
