@@ -123,6 +123,12 @@
       }
     },
     {
+      "Sid": "AllowSendEmail",
+      "Effect": "Allow",
+      "Action": ["ses:SendEmail"],
+      "Resource": "arn:aws:ses:ap-southeast-2:459321894716:identity/linkedqueue.cloud"
+    },
+    {
       "Sid": "AllowBedrockInvoke",
       "Effect": "Allow",
       "Action": [

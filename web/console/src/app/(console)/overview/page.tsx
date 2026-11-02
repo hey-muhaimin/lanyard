@@ -18,6 +18,21 @@ export default function OverviewPage() {
 
   return (
     <div className="grid gap-6">
+      {agents.status === "ready" && (agents.data ?? []).length === 0 && can(role, "agents.write") && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Set up your first agent</CardTitle>
+            <CardDescription>
+              Add an agent public key to start issuing task-scoped access from this workspace.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link href="/agents/">Register an agent</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat title="Agents" value={agents.data?.length} state={agents.status} />
         <Stat title="Waiting for approval" value={can(role, "approvals.read") ? pending.length : undefined} state={approvals.status} />

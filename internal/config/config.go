@@ -30,10 +30,12 @@ type Config struct {
 	AuthCodeDelivery     string        // env AUTH_CODE_DELIVERY: none|log|response|email
 	AuthEmailFrom        string        // env AUTH_EMAIL_FROM, default no-reply@linkedqueue.cloud
 	AuthCodeLogPlaintext bool          // env AUTH_CODE_LOG_PLAINTEXT == "true"
-	OpsSSOEnabled    bool   // env OPS_SSO_ENABLED == "true"
-	CognitoSecretARN string // env COGNITO_SECRET_ARN
-	OpsPublicBaseURL string // env OPS_PUBLIC_BASE_URL, e.g. https://ops.linkedqueue.cloud
-	AllowSignup bool // env ALLOW_SIGNUP == "true"
+	OpsSSOEnabled        bool          // env OPS_SSO_ENABLED == "true"
+	CognitoSecretARN     string        // env COGNITO_SECRET_ARN
+	OpsPublicBaseURL     string        // env OPS_PUBLIC_BASE_URL, e.g. https://ops.linkedqueue.cloud
+	OpsConsoleOrigin     string        // env OPS_CONSOLE_ORIGIN, e.g. https://ops.linkedqueue.cloud
+	ConsoleOrigin        string        // env CONSOLE_ORIGIN, e.g. https://console.linkedqueue.cloud
+	AllowSignup          bool          // env ALLOW_SIGNUP == "true"
 	SessionTTL           time.Duration // env SESSION_TTL
 	SessionIdle          time.Duration // env SESSION_IDLE
 
@@ -61,9 +63,15 @@ func Load() Config {
 		DevMode:                  os.Getenv("ALLOW_INSECURE_DEMO") == "true",
 
 		PublicBaseURL:        getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
+		AuthCodeDelivery:     getEnv("AUTH_CODE_DELIVERY", "none"),
 		AuthEmailFrom:        getEnv("AUTH_EMAIL_FROM", "no-reply@linkedqueue.cloud"),
 		AuthCodeLogPlaintext: os.Getenv("AUTH_CODE_LOG_PLAINTEXT") == "true",
 		AllowSignup:          os.Getenv("ALLOW_SIGNUP") == "true",
+		OpsSSOEnabled:        os.Getenv("OPS_SSO_ENABLED") == "true",
+		CognitoSecretARN:     getEnv("COGNITO_SECRET_ARN", ""),
+		OpsPublicBaseURL:     getEnv("OPS_PUBLIC_BASE_URL", ""),
+		OpsConsoleOrigin:     getEnv("OPS_CONSOLE_ORIGIN", ""),
+		ConsoleOrigin:        getEnv("CONSOLE_ORIGIN", ""),
 		SessionTTL:           durationEnv("SESSION_TTL", 12*time.Hour),
 		SessionIdle:          durationEnv("SESSION_IDLE", 2*time.Hour),
 
@@ -163,6 +171,15 @@ func (c Config) Validate() error {
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return fmt.Errorf("PUBLIC_BASE_URL must be an absolute URL")
 	}
+	if c.ConsoleOrigin != "" {
+		consoleURL, err := url.Parse(c.ConsoleOrigin)
+		if err != nil || consoleURL.Scheme == "" || consoleURL.Host == "" {
+			return fmt.Errorf("CONSOLE_ORIGIN must be an absolute URL")
+		}
+		if !strings.EqualFold(consoleURL.Scheme, "https") && !c.DevMode {
+			return fmt.Errorf("CONSOLE_ORIGIN must use https outside demo mode")
+		}
+	}
 
 	if c.OpsSSOEnabled {
 		if c.CognitoSecretARN == "" {
@@ -172,10 +189,16 @@ func (c Config) Validate() error {
 		if err != nil || opsURL.Scheme == "" || opsURL.Host == "" {
 			return fmt.Errorf("OPS_PUBLIC_BASE_URL must be an absolute URL when OPS_SSO_ENABLED is true")
 		}
-	if !strings.EqualFold(opsURL.Scheme, "https") && !c.DevMode {
-		return fmt.Errorf("OPS_PUBLIC_BASE_URL must use https outside demo mode")
+		if !strings.EqualFold(opsURL.Scheme, "https") && !c.DevMode {
+			return fmt.Errorf("OPS_PUBLIC_BASE_URL must use https outside demo mode")
+		}
+		consoleURL, err := url.Parse(c.OpsConsoleOrigin)
+		if err != nil || consoleURL.Scheme == "" || consoleURL.Host == "" {
+			return fmt.Errorf("OPS_CONSOLE_ORIGIN must be an absolute URL when OPS_SSO_ENABLED is true")
+		}
+		if !strings.EqualFold(consoleURL.Scheme, "https") && !c.DevMode {
+			return fmt.Errorf("OPS_CONSOLE_ORIGIN must use https outside demo mode")
+		}
 	}
-}
 	return nil
 }
-

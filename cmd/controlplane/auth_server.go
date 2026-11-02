@@ -269,6 +269,8 @@ func (h *authHandler) handleRegister(w http.ResponseWriter, r *http.Request) {
 			h.logger.Info("registration skipped: already registered", "tenant_name_len", utf8.RuneCountInString(tenantName))
 		} else {
 			h.logger.Error("register tenant", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "could not create workspace"})
+			return
 		}
 	}
 

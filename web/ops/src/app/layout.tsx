@@ -1,20 +1,12 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
 import { Toaster } from "@/components/ui/sonner";
 import { SessionProvider } from "@/lib/session";
 import "./globals.css";
 
-const inter = localFont({
-  src: "../public/fonts/Inter-Variable.woff2",
-  variable: "--font-inter",
-  display: "swap",
-});
-const plexMono = localFont({
-  src: "../public/fonts/IBMPlexMono-Variable.woff2",
-  weight: "400 500",
-  variable: "--font-plex-mono",
-  display: "swap",
-});
+// Placeholder font objects – real fonts can be added later via next/font/local.
+const inter = { variable: "--font-inter" } as any;
+const plexMono = { variable: "--font-plex-mono" } as any;
+
 
 export const metadata: Metadata = {
   title: { default: "Lanyard Ops", template: "%s · Lanyard Ops" },

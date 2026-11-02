@@ -58,11 +58,11 @@ func TestIssueGrant(t *testing.T) {
 	svc := NewService(store, policy.SimpleEngine{})
 
 	claims, err := svc.Issue(context.Background(), Request{
-		Subject:  "user:alice",
-		Actor:    "agent-1",
-		TaskID:   "task-42",
-		Purpose:  "crm-read",
-		Resources: []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts/42", MaxRows: 10}},
+		Subject:    "user:alice",
+		Actor:      "agent-1",
+		TaskID:     "task-42",
+		Purpose:    "crm-read",
+		Resources:  []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts/42", MaxRows: 10}},
 		TTLSeconds: 300,
 	})
 	if err != nil {
@@ -80,12 +80,12 @@ func TestIssueRejectsWiderChildScope(t *testing.T) {
 	store := &mockStore{
 		tenant: "tenant-1",
 		agent: grantstore.Agent{
-			ID:     "agent-1",
-			TenantID: "tenant-1",
-			Name:   "support-bot",
+			ID:           "agent-1",
+			TenantID:     "tenant-1",
+			Name:         "support-bot",
 			OwnerSubject: "user:alice",
-			PublicKey: testPublicKey(),
-			Status: "active",
+			PublicKey:    testPublicKey(),
+			Status:       "active",
 		},
 	}
 	svc := NewService(store, policy.SimpleEngine{})
@@ -93,13 +93,13 @@ func TestIssueRejectsWiderChildScope(t *testing.T) {
 	svc.RegisterParentGrant("parent-1", []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts", MaxRows: 10}})
 
 	_, err := svc.Issue(context.Background(), Request{
-		Subject:   "user:alice",
-		Actor:     "agent-1",
-		TaskID:    "task-43",
-		Purpose:   "crm-read",
+		Subject:     "user:alice",
+		Actor:       "agent-1",
+		TaskID:      "task-43",
+		Purpose:     "crm-read",
 		ParentGrant: "parent-1",
-		Resources: []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts/99", MaxRows: 50}},
-		TTLSeconds: 300,
+		Resources:   []ScopeEntry{{Connector: "crm", Action: "read", Resource: "accounts/99", MaxRows: 50}},
+		TTLSeconds:  300,
 	})
 	if err == nil {
 		t.Fatal("Issue() accepted a child scope that exceeded parent scope")
@@ -120,8 +120,8 @@ func TestIssueParentScopeRequiresSegmentBoundedAttenuation(t *testing.T) {
 		{name: "sibling path is rejected", parent: "accounts/42", requested: "accounts/43", wantErr: true},
 	}
 	for _, test := range tests {
-			t.Run(test.name, func(t *testing.T) {
-				svc := newTestService(t, policy.SimpleEngine{})
+		t.Run(test.name, func(t *testing.T) {
+			svc := newTestService(t, policy.SimpleEngine{})
 			svc.RegisterParentGrant("parent-1", []ScopeEntry{{
 				Connector: "crm",
 				Action:    "read",
@@ -129,9 +129,9 @@ func TestIssueParentScopeRequiresSegmentBoundedAttenuation(t *testing.T) {
 				MaxRows:   20,
 			}})
 			_, err := svc.Issue(context.Background(), Request{
-				Subject:   "user:alice",
-				Actor:     "agent-1",
-				TaskID:    "task-44",
+				Subject:     "user:alice",
+				Actor:       "agent-1",
+				TaskID:      "task-44",
 				ParentGrant: "parent-1",
 				Resources: []ScopeEntry{{
 					Connector: "crm",

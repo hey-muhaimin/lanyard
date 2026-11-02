@@ -60,15 +60,26 @@ func main() {
 
 	pool, err := newDBPool(cfg)
 	if err != nil {
-		logger.Error("failed to create database pool", map[string]any{"error": err.Error()})
-		os.Exit(1)
+		if cfg.DevMode {
+			logger.Warn("running without database pool (dev mode)", map[string]any{"reason": err.Error()})
+			pool = nil
+		} else {
+			logger.Error("failed to create database pool", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+	} else {
+		defer pool.Close()
 	}
-	defer pool.Close()
 
-	gs, err := newGrantService(cfg, pool)
-	if err != nil {
-		logger.Error("failed to create grant service", map[string]any{"error": err.Error()})
-		os.Exit(1)
+	var gs *grant.Service
+	if pool != nil {
+		gs, err = newGrantService(cfg, pool)
+		if err != nil {
+			logger.Error("failed to create grant service", map[string]any{"error": err.Error()})
+			os.Exit(1)
+		}
+	} else {
+		logger.Warn("running without grant service (dev mode, no database)", nil)
 	}
 
 	signer, err := newTokenSigner(cfg, logger)
@@ -255,6 +266,10 @@ func newControlPlaneHandler(gs *grant.Service, signer *token.Signer, cfg config.
 	})
 	mux.Handle("/jwks.json", token.JWKSHandler(signer.KeyID(), signer.PublicKey()))
 	mux.HandleFunc("/grant", func(w http.ResponseWriter, r *http.Request) {
+		if gs == nil {
+			http.Error(w, "grant service unavailable (no database)", http.StatusServiceUnavailable)
+			return
+		}
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -343,11 +358,19 @@ func newControlPlaneHandler(gs *grant.Service, signer *token.Signer, cfg config.
 	}
 	// Ops console routes (placeholder implementation). Mount only if enabled.
 	if cfg.OpsSSOEnabled {
+		// The ops console is served from a separate origin, so allow its
+		// credentialed cross-origin requests on /ops/* only.
 		opsHandler := newOpsHandler(pool)
+		opsHandler = corsMiddleware(&cfg)(opsHandler)
+		opsHandler = cspMiddleware(opsHandler)
 		mux.Handle("/ops/", opsHandler)
 	}
-	// Wrap the entire mux with CSP middleware for the static console apps.
-	return cspMiddleware(mux)
+	// Model provider connection endpoints (top-level, available in all modes).
+	mux.HandleFunc("/connect", api.connectHandler)
+	mux.HandleFunc("/models", api.modelsHandler)
+
+	// Wrap the entire mux with CSP and exact-origin console CORS policies.
+	return corsMiddleware(&cfg)(cspMiddleware(mux))
 }
 
 func dpopTargetURL(r *http.Request, devMode bool) string {

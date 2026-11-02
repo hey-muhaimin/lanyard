@@ -2,7 +2,7 @@
 
 Lanyard is a Go control plane and egress proxy for issuing short-lived, task-scoped grants to autonomous agents. The proxy validates grants and brokers upstream credentials so they do not need to be exposed to the agent runtime.
 
-> **Status: not production-ready.** The repository has working components and deployment prototypes, but still has release blockers. Customer login has no production code-delivery provider, the CDK stack is unsafe and incomplete, the ops console is a prototype, and distributed revocation/replay requirements are unfinished. Read [production status](deploy/production.md) before deploying anything beyond a controlled development environment.
+> **Status: not production-ready.** The repository has working components and deployment prototypes, but still has release blockers. Customer login can deliver codes by email through SES when `AUTH_CODE_DELIVERY=email` and the IAM/SES setup in `infra/iam/README.md` is applied; the CDK stack is unsafe and incomplete, the ops console is a prototype whose backend is mounted only behind Cognito SSO (`OPS_SSO_ENABLED=true`), and distributed revocation/replay requirements are unfinished. Read [production status](deploy/production.md) before deploying anything beyond a controlled development environment.
 
 ## Components
 
@@ -10,7 +10,7 @@ Lanyard is a Go control plane and egress proxy for issuing short-lived, task-sco
 - `cmd/proxy`: validates grants and proxies to a configured HTTPS upstream while resolving the upstream credential from the secret store.
 - `cmd/migrate`: applies the embedded PostgreSQL migrations.
 - `web/console`: customer console; built as a static export and deployed separately from the Go API.
-- `web/ops`: internal operations UI prototype. Its backend routes are intentionally unavailable until staff identity and authorization are implemented.
+- `web/ops`: internal operations UI prototype. Its backend (`/ops/*`) is mounted only when `OPS_SSO_ENABLED=true` and backed by Cognito staff SSO; it stays 404 in every other configuration.
 
 ## Requirements
 

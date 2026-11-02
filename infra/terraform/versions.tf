@@ -10,6 +10,11 @@ terraform {
       version = "~> 3.0"
     }
   }
+  # PREREQUISITE: the S3 state bucket `lanyard-terraform-state` and the
+  # DynamoDB lock table `lanyard-terraform-locks` must be provisioned
+  # out-of-band (manually or via a separate bootstrap stack) before
+  # `terraform init` can succeed against this backend. They are not managed
+  # by this configuration, so a fresh account will fail init until they exist.
   backend "s3" {
     bucket         = "lanyard-terraform-state"
     key            = "production/terraform.tfstate"

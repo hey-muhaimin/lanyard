@@ -21,19 +21,22 @@ A fixture request from another engineer is pending, so you can try Approve and D
 
 ## Backend Status
 
-This UI uses mock fixtures for local development. Do not connect it to production or rely on it for staff operations. The existing Go handler is a placeholder and is intentionally not mounted: it does not establish a trustworthy staff identity. `/ops/*` returns 404 until a separately reviewed authentication and authorization implementation is available.
-
-The following is a proposed API contract only, not a supported backend:
+The backend exists in `cmd/controlplane` and is mounted at `/ops/*` only when `OPS_SSO_ENABLED=true`;
+otherwise every route returns 404. Staff sign in through Cognito (authorization code + PKCE, `staff`
+group required), and `/ops/auth/me` reports the session. Local development can either use the Next
+dev rewrite against a running control plane (`LANYARD_API_ORIGIN`) or `NEXT_PUBLIC_OPS_MOCK=1` for
+fixtures. Mock mode is not an authentication implementation and must never be deployed.
 
 | Call | Purpose |
 | --- | --- |
 | `GET /ops/auth/login` | Start staff SSO (OIDC) with a hardware-key requirement |
+| `GET /ops/auth/callback/` | Cognito redirect target; sets the `lanyard_ops_session` cookie |
 | `GET /ops/auth/me` → `{email, role, hardware_key}` | Session |
-| `POST /ops/auth/logout` | |
-| `GET /ops/health` → `{proxy_p99_ms, revocation_lag_s, event_backlog, uptime_30d_pct, updated_at}` | Health tiles |
-| `GET /ops/tenants` → `[{id, name, plan, agents, grants, state}]` | Tenants |
-| `GET /ops/actions`, `POST /ops/actions {type, tenant_id, reason}` | Request queue; `tenant_id` is `"*"` for platform-wide |
-| `POST /ops/actions/{id}/decide {status: approved\|denied}` | Second person decides |
+| `POST /ops/auth/logout` | Clears the session |
+| `GET /ops/health` → `{proxy_p99_ms, revocation_lag_s, event_backlog, uptime_30d_pct, updated_at}` | Health tiles (still static) |
+| `GET /ops/tenants` → `[{id, name, plan, agents, grants, state}]` | Tenants, platform-wide |
+| `GET /ops/actions?tenant_id=`, `POST /ops/actions {type, tenant_id, reason}` | Request queue; `tenant_id` is `"*"` for platform-wide |
+| `POST /ops/actions/{id}/decide {status: approved\|denied}` | Second person decides; `approved` is stored as `executed` |
 
 Roles: `ops_admin`, `ops_oncall` (request and decide), `ops_support` (read only).
 

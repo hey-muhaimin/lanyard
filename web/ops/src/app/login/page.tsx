@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { isMock } from "@/lib/api";
+import { API_BASE, isMock } from "@/lib/api";
 import { useSession } from "@/lib/session";
 
 // Staff sign-in happens at the company identity provider (SSO with a hardware security key).
@@ -27,7 +27,7 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent className="grid gap-3">
             <Button asChild>
-              <a href={isMock ? "/health/" : "/ops/auth/login"}>Continue with company SSO</a>
+              <a href={isMock ? "/health/" : `${API_BASE}/ops/auth/login`}>Continue with company SSO</a>
             </Button>
             {state.status === "anon" && <p className="text-sm text-muted-foreground">You are not signed in, or your session ended.</p>}
           </CardContent>

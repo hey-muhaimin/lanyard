@@ -117,19 +117,19 @@ export class LanyardStack extends cdk.Stack {
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
       },
       additionalBehaviors: {
-        // API routes go to the ALB
+        // /ops/* MUST always resolve to the ALB (the Go control plane).
+        // Never map /ops/* (or any overlapping prefix such as '/ops/' or
+        // '/ops/static/*') to the S3 origin: CloudFront selects the most
+        // specific matching behavior, so an overlapping S3 behavior would
+        // silently swallow /ops/* API traffic and return S3 404s.
+        // The static ops console is served by a SEPARATE CloudFront-to-S3
+        // distribution on its own hostname (ops.linkedqueue.cloud), so this
+        // distribution needs no S3 behavior under /ops/.
         '/ops/*': {
           origin: new cloudfront_origins.LoadBalancerV2Origin(lb, { protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY }),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-        },
-        // Ops static assets (if you ever need a separate prefix)
-        '/ops/': {
-          origin: new cloudfront_origins.S3Origin(bucket, { originPath: '/ops', originAccessIdentity: oai }),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
-          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         },
       },
     });

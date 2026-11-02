@@ -1,73 +1,74 @@
-## Project Guide
+# Lanyard
 
-Lanyard is a Go control plane and egress proxy for task-scoped agent grants. The repository is not production-ready; use [README.md](README.md) for current status, setup, and known release blockers. Treat proposals and sprint notes as historical unless the README or current code confirms them.
+Go control plane + egress proxy issuing task-scoped grants to autonomous agents, with Cedar policy evaluation and PostgreSQL-backed audit.
 
-## Quick Checks
+**Status: not production-ready.** [README.md](README.md) is the source of truth for status, setup, and release blockers. Sprint notes, plans in `docs/plans/`, and `12-Hour Implementation Plan.md` are historical — verify against code before trusting them.
 
-- Go: `go test ./...` and `go build ./...` (Go 1.27).
-- Cedar: `cedar validate --schema policies/schema.cedarschema.json --schema-format json --policies policies/default.cedar --policy-format cedar`.
-- Customer UI: from `web/console`, run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build:static` (Node 20.9+).
-- Ops UI: from `web/ops`, run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build:static` (Node 20.9+). Mock mode is not production auth.
-- CI is defined in `.github/workflows/ci.yml`; database integration checks require its PostgreSQL setup or the documented local test URLs.
+## Commands
+
+```bash
+go test ./... && go build ./...          # Go 1.27
+cedar validate --schema policies/schema.cedarschema.json --schema-format json \
+  --policies policies/default.cedar --policy-format cedar
+
+go run ./cmd/migrate                     # applies migrations/ (embedded via embed.go)
+```
+
+Database integration tests need two URLs or they **silently skip**:
+
+```bash
+TEST_DATABASE_URL=postgres://lanyard_app:lanyard_app@localhost:5432/lanyard?sslmode=disable
+TEST_ADMIN_DATABASE_URL=postgres://lanyard:lanyard@localhost:5432/lanyard?sslmode=disable
+```
+
+If `CI` is set, missing URLs are fatal instead of skipped. A plain `go test ./...` without these proves nothing about SQL, RLS, or migrations. CI (`.github/workflows/ci.yml`) starts `postgres:16-alpine`, runs migrations as the `lanyard` owner, then sets the `lanyard_app` password before testing.
+
+Web apps (both Next 16 static-export; Node >= 20.9). Run per app from its directory:
+
+```bash
+npm ci && npm run typecheck && npm test && npm run build:static
+```
+
+- `web/console` — customer console, dev on :3000.
+- `web/ops` — internal ops console, dev on :3001. `NEXT_PUBLIC_OPS_MOCK=1` serves fixtures and a fake signed-in engineer; **mock mode is not authentication**.
 
 ## Repository Rules
 
-- Do not use demo mode or demo credentials in production. Tenant IDs stored in PostgreSQL must be UUIDs; the default `tenant-demo` is local-only and the demo agent seed is not compatible with the production UUID schema.
-- Never log request bodies, authorization headers, login codes, tokens, or upstream secrets. Keep secrets in the configured secret store, not source or Compose files.
-- Treat migrations as immutable after release. Add the next contiguous migration and preserve RLS, tenant scoping, and explicit grants for tenant-owned tables.
-- Keep production access fail-closed. `/ops/*` is intentionally not mounted until real staff authentication and authorization are implemented. Do not re-enable the placeholder handler.
-- The root `docker-compose.yml` is not a supported production deployment. `deploy/production.compose.yml` is a manual single-host template, not an endorsement that the whole product is production-ready.
-- Avoid committing generated binaries, local environment files, node modules, or static build output. Some historical artifacts are already tracked; do not delete or rewrite those without an explicit cleanup decision.
+- **Tenant IDs in PostgreSQL must be UUIDs.** The `tenant-demo` default in `internal/config` and the demo agent seed are local-only and will fail against the production UUID schema.
+- Never use demo mode or demo credentials in production. `AUTH_CODE_DELIVERY=response` returns login codes in the HTTP response and is rejected unless `ALLOW_INSECURE_DEMO=true`.
+- Never log request bodies, authorization headers, login codes, tokens, or upstream secrets. Secrets belong in the configured secret store (Secrets Manager / KMS), never in source or Compose files.
+- **Migrations are immutable after release.** Add the next contiguous file in `migrations/`; preserve RLS, tenant scoping, and explicit grants on tenant-owned tables.
+- Keep production access fail-closed. Config fails fast on empty `PORT`, `TENANT_ID`, `VAULT_KEY_ID`; production also requires `KMS_KEY_ID` and `AWS_REGION` (`ValidateProduction`). `/ops/*` is mounted only when `OPS_SSO_ENABLED=true` with a real Cognito user pool (`COGNITO_SECRET_ARN`) and `OPS_PUBLIC_BASE_URL`; every other configuration must leave it at 404. Never re-enable the former placeholder session handler.
+- The root `docker-compose.yml` is **not** a supported production deployment. `deploy/production.compose.yml` is a manual single-host template that expects external ingress/TLS; it is not an endorsement of production readiness.
+- `cdk/` is a prototype and is not approved for production deployment.
+- Do not commit generated binaries, local env files, `node_modules/`, or static build output. `.env` is gitignored. Some historical artifacts (`controlplane.exe`, `proxy.exe`, `migrate.exe`, `proxy.bin`, `fix3.py`, `lanyard-policy.json`) are still tracked — do not delete or rewrite them without an explicit cleanup decision.
 
 ## Layout
 
-- `cmd/controlplane`, `cmd/proxy`, `cmd/migrate`: service and migration entry points.
-- `internal/`: auth, grants, policy, storage, vault, proxy support, and logging.
-- `migrations/`: embedded PostgreSQL migrations; `policies/`: Cedar schema and example policy.
-- `web/console`: customer console; `web/ops`: internal console prototype; `web/`: legacy static assets.
-- `deploy/`: single-host Compose template and rollout notes; `cdk/`: infrastructure prototype, not approved for production deployment.
-- `sdk/`, `connectors/`, `docs/`: client code, connector specifications, and design records.
+- `cmd/controlplane`, `cmd/proxy`, `cmd/migrate` — service and migration entry points.
+- `internal/` — auth, authstore, grant, policy, storage/db, vault, kms, staffsso, mailer, opsstore, proxy support, logging.
+- `migrations/` — embedded PostgreSQL migrations. `policies/` — Cedar schema + example policy.
+- `web/console`, `web/ops` — customer and ops consoles. `web/` also holds legacy static assets.
+- `deploy/` — single-host Compose template and rollout notes. `infra/terraform`, `infra/iam`, `infra/nginx` — infra assets.
+- `sdk/`, `connectors/`, `docs/`, `openapi.yaml` — client code, connector specs, design records, API description.
 
-## Email login-code delivery (new)
+## Ops console and staff SSO
 
-- Enable with `AUTH_CODE_DELIVERY=email`.
-- `AUTH_EMAIL_FROM` (default `no-reply@linkedqueue.cloud`) must be a non‑empty valid email address; the control‑plane validates this at start.
-- Requires `AWS_REGION` (SES region). The mailer is created at startup; if SES init fails a warning is logged and email delivery is disabled.
-- Run mailer‑specific tests: `go test ./internal/mailer`.
-- When `AUTH_CODE_DELIVERY=response` is used, `ALLOW_INSECURE_DEMO` must be true (dev mode only).
+`/ops/*` is mounted **only** when `OPS_SSO_ENABLED=true`, backed by real Cognito SSO (`internal/staffsso`). There is no placeholder handler anymore.
 
-## Ops staff SSO (new)
+- Required when enabled: `COGNITO_SECRET_ARN`, `OPS_PUBLIC_BASE_URL`, `OPS_CONSOLE_ORIGIN`. The last two must be absolute and HTTPS outside demo mode.
+- Callback path is exactly `/ops/auth/callback/` (`staffsso.CallbackPath`). It must match the Cognito app client's registered callback URL character for character.
+- The ops console and the API are **separate origins**. The static console is served from its own origin (`https://ops.linkedqueue.cloud`) and calls the API at `NEXT_PUBLIC_API_BASE` (`https://api.linkedqueue.cloud`). Do not point the console hostname at the API load balancer — `/ops/auth/*` will 404 there because that host serves only static files.
+- CORS is applied to `/ops/*` only and allows exactly `OPS_CONSOLE_ORIGIN` with credentials; the ops frontend must send `credentials: "include"`.
+- `/ops/*` endpoints: `health`, `tenants`, `actions`, `actions/{id}/decide`, plus `auth/login|callback|me|logout`.
 
-- Enable with `OPS_SSO_ENABLED=true`.
-- Requires `COGNITO_SECRET_ARN` and `OPS_PUBLIC_BASE_URL` (HTTPS unless dev mode). In dev mode (`ALLOW_INSECURE_DEMO=true`) HTTP is allowed.
-- When enabled, `/ops/*` routes are mounted; otherwise they return 404.
-- Registration endpoint is gated by `ALLOW_SIGNUP`.
+## Email login-code delivery
 
-## IAM / Permissions Boundary (new)
+- Enable with `AUTH_CODE_DELIVERY=email`; `AUTH_EMAIL_FROM` (default `no-reply@linkedqueue.cloud`) must be a non-empty valid address, validated at startup.
+- Requires `AWS_REGION` for SES. If SES init fails, startup logs a warning and email delivery is disabled.
+- Mailer tests: `go test ./internal/mailer`.
+- The EC2 instance role needs `ses:SendEmail` on the SES identity; see `infra/iam/lanyard-ses-send-policy.json` and apply the matching statement to the `lanyard-ec2-ssm-runtime-boundary-v1` boundary.
 
-- Apply the SES send‑email policy located at `infra/iam/lanyard-ses-send-policy.json`:
-  ```json
-  {
-    "Version": "2012-10-17",
-    "Statement": [
-      {
-        "Sid": "AllowSendEmail",
-        "Effect": "Allow",
-        "Action": ["ses:SendEmail"],
-        "Resource": "arn:aws:ses:ap-southeast-2:459321894716:identity/linkedqueue.cloud"
-      }
-    ]
-  }
-  ```
-- Update the EC2 role boundary `lanyard-ec2-ssm-runtime-boundary-v1` to include the `AllowSendEmail` statement (see the same file for the snippet). Publish a new version and set it as default:
-  ```
-  aws iam create-policy-version \
-    --policy-arn arn:aws:iam::459321894716:policy/lanyard-ec2-ssm-runtime-boundary-v1 \
-    --policy-document file://infra/iam/lanyard-ec2-ssm-runtime-boundary.json \
-    --set-as-default
-  ```
-- Attach both the identity policy and the updated boundary to the EC2 instance role that runs the control‑plane container.
-<!-- BEGIN AWS Agent Toolkit rules -->
 <!-- BEGIN AWS Agent Toolkit rules -->
 # AWS Guidance for the new AWS experience
 
@@ -96,9 +97,9 @@ This user has signed up for the new AWS experience. This experience lets you sig
   - **MUST NOT** use Lambda@Edge — excluded from both Lambda and CloudFront
   - **MUST NOT** use CloudFormation StackSets — no multi‑account or multi‑Region deployments
   - **MUST NOT** attempt cross‑Region actions — no cross‑Region replication for DynamoDB/S3/RDS, no multi‑Region KMS keys
-  - **MUST NOT** use Route 53 cross‑Region routing — geolocation, latency‑based, and failover routing policies are not available
+  - **MUST NOT** use Route 53 cross‑Region routing — geolocation, latency‑based, and failover routing policies are not available
   - CloudFront is a global service and its actions **ARE** allowed in `us-east-1`. A user can create a CloudFront distribution pointing to their project‑region Lambda function URL or API Gateway. However, Lambda and API Gateway themselves **MUST NOT** be created in `us-east-1` — they must be in the project Region.
-  - Reduced availability in `eu-north-1` specifically: Amazon Rekognition, Amazon Textract, Amazon Personalize, AWS App Runner are not available in that Region.
+  - Reduced availability in `eu-north-1` specifically: Amazon Rekognition, Amazon Textract, Amazon Personalize, AWS App Runner are not available in that Region.
 - IAM permissions for human access are managed by AWS. Don't assign roles to team members unless absolutely necessary
 - The user may have a spend limit if they are on the paid plan. The limit that pauses their project if it's exceeded. If resources suddenly become inaccessible, ask if they have a spend limit configured. Only project owners can modify a spend limit.
 - When developing:
@@ -126,6 +127,4 @@ You **CAN** update this rule file to save a user's `help_level`.
 **LOW** – No extra questions, just obey.
 **MEDIUM** – May ask up to two clarifying questions.
 **HIGH** – Explain steps, suggest alternatives, flag best practices.
-<!-- END AWS Agent Toolkit rules -->
-
 <!-- END AWS Agent Toolkit rules -->

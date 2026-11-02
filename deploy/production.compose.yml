@@ -13,12 +13,21 @@ services:
     cap_drop:
       - ALL
     stop_grace_period: 15s
+    # The ALB reaches this port from inside the VPC, so it binds all interfaces.
+    # The instance security group MUST restrict inbound 8080 to the ALB security
+    # group only -- never expose it to 0.0.0.0/0.
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     environment:
       PORT: "8080"
+      CONSOLE_ORIGIN: "https://console.linkedqueue.cloud"
+      ALLOW_SIGNUP: "true"
+      OPS_CONSOLE_ORIGIN: "https://ops.linkedqueue.cloud"
       LOG_LEVEL: info
       TENANT_ID: ${TENANT_ID:?set TENANT_ID to the production tenant UUID}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL to the customer console origin}
+      AUTH_CODE_DELIVERY: ${AUTH_CODE_DELIVERY:-email}
+      AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:-no-reply@linkedqueue.cloud}
       AWS_REGION: ap-southeast-2
       KMS_KEY_ID: alias/lanyard-production-storage
       VAULT_KEY_ID: alias/lanyard-production-storage
@@ -27,6 +36,9 @@ services:
       TOKEN_KEY_ID: ${TOKEN_KEY_ID:?set TOKEN_KEY_ID}
       TOKEN_ISSUER: ${TOKEN_ISSUER:?set TOKEN_ISSUER}
       TOKEN_AUDIENCE: ${TOKEN_AUDIENCE:?set TOKEN_AUDIENCE}
+      OPS_SSO_ENABLED: ${OPS_SSO_ENABLED:-false}
+      COGNITO_SECRET_ARN: ${COGNITO_SECRET_ARN:-}
+      OPS_PUBLIC_BASE_URL: ${OPS_PUBLIC_BASE_URL:-}
 
   proxy:
     image: ${LANYARD_IMAGE:?set LANYARD_IMAGE to an immutable image tag}

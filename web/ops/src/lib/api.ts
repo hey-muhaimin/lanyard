@@ -5,10 +5,17 @@ import type { Api } from "./types";
 export { ApiError };
 export const UNAUTHENTICATED_EVENT = "lanyard-ops:unauthenticated";
 export const isMock = process.env.NEXT_PUBLIC_OPS_MOCK === "1";
+// Absolute origin of the control plane's public API (ALB behind api.linkedqueue.cloud).
+// The static console is served from a different host, so requests must not be root-relative.
+const rawBase = (process.env.NEXT_PUBLIC_API_BASE || "").trim();
+export const API_BASE = rawBase ? rawBase.replace(/\/*$/, "") : "https://api.linkedqueue.cloud";
 
+// Only the live client calls request(); mock mode short-circuits at the `api` export below.
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    credentials: "same-origin",
+  const url = isMock ? path : `${API_BASE}${path}`;
+  const response = await fetch(url, {
+    // Cross-origin but same-site, so session cookies still ride along.
+    credentials: "include",
     ...init,
     headers: { "Content-Type": "application/json", ...init.headers },
   });
@@ -28,7 +35,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
-// The /ops/* endpoints are a proposal: the control plane does not serve them yet (see README).
+// The /ops/* endpoints are served by the Go control‑plane on the API host (api.linkedqueue.cloud).
 const live: Api = {
   me: () => request("/ops/auth/me"),
   logout: () => request("/ops/auth/logout", post({})),

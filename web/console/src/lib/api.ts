@@ -11,10 +11,14 @@ export class ApiError extends Error {
 
 export const UNAUTHENTICATED_EVENT = "lanyard:unauthenticated";
 
-// Same-origin only: the session cookie is HttpOnly + SameSite=Strict and the server checks Origin.
+const rawBase = (process.env.NEXT_PUBLIC_API_BASE || "").trim();
+export const API_BASE = rawBase ? rawBase.replace(/\/*$/, "") : "https://api.linkedqueue.cloud";
+
+// Production static hosting uses a separate API origin; credentials are required
+// for the HttpOnly session cookie and the server validates the browser Origin.
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    credentials: "same-origin",
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
     ...init,
     headers: { "Content-Type": "application/json", ...init.headers },
   });

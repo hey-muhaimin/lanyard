@@ -56,6 +56,8 @@ src/lib                     api client, session, roles (+ test), types
 src/hooks/use-resource.ts   load/reload with loading, error and idle states
 ```
 
+Workspace registration follows sign-in to verification to overview. New workspaces are guided to register their first agent before issuing grants.
+
 ## Current Limitations
 
 Several pages remain placeholders. Production login-code delivery is not implemented, and the current CDK stack does not provide complete same-origin console/API routing. The internal ops console is a separate prototype in `web/ops`.

@@ -51,6 +51,38 @@ paths:
   /admin/connectors:
     post:
       responses: { '201': { description: Connector created } }
+  /connect:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, api_key]
+              properties:
+                provider: { type: string, description: "Model provider (openai, anthropic, ...)" }
+                api_key: { type: string, description: "Provider API key (never returned)" }
+                base_url: { type: string, description: "Optional override of the provider base URL" }
+                name: { type: string, description: "Optional friendly name" }
+      responses:
+        '201': { description: Connection created }
+        '400': { description: Missing provider or api_key }
+  /models:
+    get:
+      parameters:
+        - name: connection_id
+          in: query
+          schema: { type: string }
+          description: "Fetch models from a connected provider"
+        - name: provider
+          in: query
+          schema: { type: string }
+          description: "Filter static catalog by provider"
+      responses:
+        '200': { description: Model list }
+        '404': { description: Unknown connection }
+        '502': { description: Provider request failed }
   /events/replay:
     get:
       responses: { '200': { description: Tenant audit timeline } }

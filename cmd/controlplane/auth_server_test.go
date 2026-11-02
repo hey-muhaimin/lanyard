@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -480,6 +481,25 @@ func TestAuthRegisterConflictStillAccepted(t *testing.T) {
 	decodeBody(t, recorder, &body)
 	if body["status"] != "ok" {
 		t.Fatalf("body = %v, want status ok", body)
+	}
+}
+
+func TestAuthRegisterUnexpectedErrorFails(t *testing.T) {
+	store := newFakeAuthStore()
+	store.registerErr = errors.New("database unavailable")
+	cfg := testAuthConfig()
+	cfg.AllowSignup = true
+	h := newTestAuthHandler(store, cfg)
+
+	recorder := serveAuth(h, http.MethodPost, "/auth/register",
+		`{"email":"new@example.com","tenant_name":"Acme"}`, nil, nil)
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body=%q", recorder.Code, recorder.Body.String())
+	}
+	var body map[string]any
+	decodeBody(t, recorder, &body)
+	if body["error"] != "could not create workspace" {
+		t.Fatalf("body = %v, want workspace creation error", body)
 	}
 }
 
