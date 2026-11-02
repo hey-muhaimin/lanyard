@@ -67,6 +67,39 @@ export default function AgentsPage() {
 function RegisterSheet({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (open: boolean) => void; onDone: () => void }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  async function generateKey() {
+    setGenerating(true);
+    setError("");
+    try {
+      const pair = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair;
+      const pubRaw = await crypto.subtle.exportKey("raw" as any, pair.publicKey);
+      const privJwk = await ((crypto.subtle as any).exportJWK)(pair.privateKey) as { d?: string };
+      if (!privJwk.d) throw new Error("Unable to export private key");
+      const publicKey = b64url(new Uint8Array(pubRaw as ArrayBuffer));
+      const input = document.getElementById("public_key") as HTMLInputElement | null;
+      if (input) {
+        input.value = publicKey;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      const blob = new Blob([JSON.stringify({ private_key_seed_b64url: privJwk.d, public_key: publicKey, note: "Dev-local key material. Never commit this file." }, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "agent-key.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Generated key pair (public key filled, seed downloaded)");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not generate key pair.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -106,6 +139,21 @@ function RegisterSheet({ open, onOpenChange, onDone }: { open: boolean; onOpenCh
       </SheetContent>
     </Sheet>
   );
+}
+
+function b64url(bytes: Uint8Array): string {
+  const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  let bits = 0, value = 0, out = "";
+  for (const b of bytes) {
+    value = (value << 8) | b;
+    bits += 8;
+    while (bits >= 6) {
+      bits -= 6;
+      out += alpha[(value >> bits) & 63];
+    }
+  }
+  if (bits > 0) out += alpha[(value << (6 - bits)) & 63];
+  return out;
 }
 
 const scopes: { value: RevokeScope; label: string }[] = [
